@@ -1,0 +1,60 @@
+name: Codzienny ETL (Aktualizacja Rynku IT)
+
+on:
+  schedule:
+    # Uruchamia się codziennie o 3:00 w nocy (czasu serwera UTC)
+    - cron: '0 3 * * *'
+  workflow_dispatch: 
+    # Pozwala na ręczne uruchomienie przyciskiem (do testów!)
+
+jobs:
+  uruchom-rurociag:
+    runs-on: ubuntu-latest
+
+    # Stawiamy tymczasowe MinIO dla naszych skryptów
+    services:
+      minio:
+        image: minio/minio
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: admin
+          MINIO_ROOT_PASSWORD: supersecretpassword
+        options: >-
+          --name minio_server
+          server /data
+
+    steps:
+      - name: 📥 Pobranie kodu z repozytorium
+        uses: actions/checkout@v3
+
+      - name: 🪣 Tworzenie jeziora danych (Bucket raw-data w MinIO)
+        run: |
+          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          ./mc alias set myminio http://127.0.0.1:9000 admin supersecretpassword
+          ./mc mb myminio/raw-data
+
+      - name: 🐍 Konfiguracja środowiska Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 📦 Instalacja bibliotek
+        run: pip install -r requirements.txt
+
+      - name: ⛏️ Ekstrakcja z No Fluff Jobs
+        run: python extract_poland.py
+
+      - name: ⛏️ Ekstrakcja z Just Join IT
+        run: python extract_jjit.py
+
+      - name: 🔄 Transformacja i ładowanie (No Fluff Jobs)
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+        run: python transform_poland.py
+
+      - name: 🔄 Transformacja i ładowanie (Just Join IT - Append)
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+        run: python transform_jjit.py
