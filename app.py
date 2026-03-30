@@ -75,7 +75,6 @@ with tab_pl:
 
             st.metric("Liczba dostepnych ofert (PL)", len(df_pl))
             
-            # Konfiguracja kolumn - Data zamiast Lp.
             column_config_pl = {
                 "date_added": st.column_config.DateColumn("Data", format="YYYY-MM-DD", width="small"),
                 "kategoria": st.column_config.TextColumn("Kategoria", width="small"),
