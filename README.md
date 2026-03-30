@@ -1,6 +1,6 @@
 # 📊 Polish IT Job Market: Data Engineering & Analytics Pipeline
 
-🚀 **[Live Dashboard - Click Here to Explore the Data][LINK_DO_STREAMLIT]**
+🚀 **[Live Dashboard - Click Here to Explore the Data][(https://kamil-rynek-it.streamlit.app)]**
 
 ## 📖 Overview
 As an aspiring IT/Data Engineer, I built this end-to-end ETL (Extract, Transform, Load) pipeline to capture, clean, and visualize the dynamic Polish IT job market. 
