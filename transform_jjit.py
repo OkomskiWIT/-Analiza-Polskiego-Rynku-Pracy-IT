@@ -1,4 +1,5 @@
 import boto3
+import os
 import json
 import pandas as pd
 from datetime import datetime
@@ -9,7 +10,6 @@ S3_ENDPOINT = 'http://127.0.0.1:9000'
 S3_ACCESS_KEY = 'admin'
 S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
-import os
 DB_URL = os.environ.get("DB_URL")
 
 def assign_category(title_str):
