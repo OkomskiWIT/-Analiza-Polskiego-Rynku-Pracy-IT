@@ -5,30 +5,22 @@ on:
     # Uruchamia się codziennie o 3:00 w nocy (czasu serwera UTC)
     - cron: '0 3 * * *'
   workflow_dispatch: 
-    # Pozwala na ręczne uruchomienie przyciskiem (do testów!)
+    # Pozwala na ręczne uruchomienie przyciskiem
 
 jobs:
   uruchom-rurociag:
     runs-on: ubuntu-latest
 
-    # Stawiamy tymczasowe MinIO dla naszych skryptów
-    services:
-      minio:
-        image: minio/minio
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: admin
-          MINIO_ROOT_PASSWORD: supersecretpassword
-        options: >-
-          --name minio_server
-          server /data
-
     steps:
       - name: 📥 Pobranie kodu z repozytorium
         uses: actions/checkout@v3
 
-      - name: 🪣 Tworzenie jeziora danych (Bucket raw-data w MinIO)
+      - name: 🐳 Uruchomienie tymczasowego serwera MinIO (Data Lake)
+        run: |
+          docker run -d -p 9000:9000 --name minio_server -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=supersecretpassword minio/minio server /data
+          sleep 5
+
+      - name: 🪣 Konfiguracja klienta i tworzenie bucketa (raw-data)
         run: |
           wget https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod +x mc
