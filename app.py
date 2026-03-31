@@ -3,12 +3,12 @@ import pandas as pd
 from sqlalchemy import create_engine
 
 DB_URL = st.secrets["DB_URL"]
-@st.cache_data
+@st.cache_data(ttl=3600)
 def fetch_global_data():
     engine = create_engine(DB_URL)
     return pd.read_sql("SELECT * FROM job_offers;", engine)
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def fetch_poland_data():
     engine = create_engine(DB_URL)
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
