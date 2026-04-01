@@ -43,7 +43,7 @@ def transform_poland():
 
     processed_data = []
     for job in jobs:
-        # 1. NAPRAWA NAZWY FIRMY
+        # 1. NAZWY FIRMY
         company_name = job.get('name') or job.get('companyName') or 'Nieznana firma'
         if isinstance(company_name, dict):
             company_name = company_name.get('name', 'Nieznana firma')
@@ -118,7 +118,7 @@ def transform_poland():
     # --- PRZENIESIENIE "REMOTE" Z LOKALIZACJI DO KOLUMNY ZDALNIE ---
     df['remote'] = df['remote'].astype(bool) | df['location'].str.contains('Remote', na=False, case=False)
 
-    # --- MAGICZNA AGREGACJA (Lączenie "City Spammingu" i czyszczenie) ---
+    # --- Lączenie "City Spammingu" i czyszczenie ---
     def scal_lokalizacje(seria_lokalizacji):
         zbior_miast = set()
         for loc in seria_lokalizacji:
@@ -147,7 +147,7 @@ def transform_poland():
         'date_added': 'max'
     }
 
-    # Grupujemy po Tytule i Firmie
+    # Grupowanie po Tytule i Firmie
     df_grouped = df.groupby(['title', 'company_name'], as_index=False).agg(sposob_agregacji)
     
     l_koncowa = len(df_grouped)
