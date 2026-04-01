@@ -22,7 +22,7 @@ def extract_nofluffjobs():
     all_offers = []
     page = 1
     
-    # Nowy, poprawny adres API wyciągnięty z Twojego śledztwa
+   
     url = "https://nofluffjobs.com/api/joboffers/main"
     
     headers = {
@@ -38,7 +38,7 @@ def extract_nofluffjobs():
         # Parametry doklejane do URL (zamiast Payloadu)
         params = {
             "pageTo": page,
-            "pageSize": 100, # Prosimy o 100 ofert na strone, by bylo szybciej
+            "pageSize": 100, # 100 ofert na stronie
             "withSalaryMatch": "true",
             "salaryCurrency": "PLN",
             "salaryPeriod": "month",
@@ -57,7 +57,7 @@ def extract_nofluffjobs():
                 
             data = response.json()
             
-            # W nowym API oferty najprawdopodobniej są w kluczu 'items' lub 'postings'
+            # W API oferty najprawdopodobniej są w kluczu 'items' lub 'postings'
             if isinstance(data, dict):
                 oferty_w_paczce = data.get('items') or data.get('postings') or data.get('offers') or []
             else:
