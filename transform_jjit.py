@@ -53,7 +53,7 @@ def transform_jjit():
         raw_date = job.get('publishedAt')
         date_added = raw_date[:10] if isinstance(raw_date, str) and len(raw_date) >= 10 else datetime.now().strftime('%Y-%m-%d')
         
-        # 2. LOKALIZACJA I ZDALNIE (Kuloodporne, oparte na Twoim JSON-ie)
+        # 2. LOKALIZACJA I ZDALNIE
         workplace_type = str(job.get('workplaceType', '')).lower()
         fully_remote = (workplace_type == 'remote')
         
@@ -75,7 +75,7 @@ def transform_jjit():
                 
         location = ", ".join(unique_places) if unique_places else 'Polska'
         
-        # 3. ZAROBKI (Naprawione! Bezpośrednio w employmentTypes)
+        # 3. ZAROBKI
         salary_min, salary_max, currency = None, None, 'PLN'
         emp_types = job.get('employmentTypes', [])
         
