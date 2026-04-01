@@ -82,8 +82,8 @@ with tab_pl:
                 "company_name": st.column_config.TextColumn("Firma", width="medium"),
                 "location": st.column_config.TextColumn("Lokalizacja", width="medium"),
                 "remote": st.column_config.TextColumn("Zdalnie", width=70),
-                "salary_min": st.column_config.NumberColumn("Pensja Min", format="%d PLN", width="small"),
-                "salary_max": st.column_config.NumberColumn("Pensja Max", format="%d PLN", width="small"),
+                "salary_min": st.column_config.NumberColumn("Pensja Min", format="%d", width="small"),
+                "salary_max": st.column_config.NumberColumn("Pensja Max", format="%d", width="small"),
                 "currency": st.column_config.TextColumn("Waluta", width=60),
                 "url": st.column_config.LinkColumn("Aplikuj", display_text="Otworz", width=70)
             }
