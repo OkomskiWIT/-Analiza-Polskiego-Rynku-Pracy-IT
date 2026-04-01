@@ -2,7 +2,7 @@ name: Codzienny ETL (Aktualizacja Rynku IT)
 
 on:
   schedule:
-    # Uruchamia się codziennie o 3:00 w nocy (czasu serwera UTC)
+    # Uruchamia się codziennie o 3:00 w nocy i o 15:00 (czasu serwera UTC)
     - cron: '0 3,15 * * *'
   workflow_dispatch: 
     # Pozwala na ręczne uruchomienie przyciskiem
