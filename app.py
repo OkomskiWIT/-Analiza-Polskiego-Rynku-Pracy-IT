@@ -20,11 +20,11 @@ def fetch_poland_data():
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
 
-tab_pl, tab_global, tab_tech, tab_ai, tab_npl = st.tabs([
+tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "Rynek Polski & Zarobki", 
     "Rynek Globalny", 
     "🔥 Top Technologie", 
-    "🤖 Kalkulator ML"
+    "🤖 Kalkulator ML",
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
