@@ -10,8 +10,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # 1. POŁĄCZENIE Z BAZĄ DANYCH
-DB_URL = os.environ.get("DB_URL", "postgresql://neondb_owner:npg_5f4xOMGwuaey@ep-snowy-poetry-alh2m3ka-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
-engine = create_engine(DB_URL)
+DB_URL = os.environ.get("DB_URL")
 
 print("Pobieranie danych z bazy Neon...")
 df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
