@@ -1,0 +1,11 @@
+# Środowisko wirtualne
+venv/
+env/
+
+# Pamięć podręczna Pythona
+__pycache__/
+*.pyc
+
+# Pliki z hasłami / sekretami Streamlita
+.env
+.streamlit/secrets.toml

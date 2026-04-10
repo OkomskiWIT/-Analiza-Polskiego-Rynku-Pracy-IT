@@ -35,9 +35,8 @@ def transform_jjit():
     
     try:
         response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_key)
-        raw_data = response['Body'].read().decode('utf-8')
-        jobs = json.loads(raw_data)
-        print(f"Wczytano {len(jobs)} surowych ofert z pliku {file_key}")
+        jobs = json.loads(response['Body'].read().decode('utf-8'))
+        print(f"Wczytano {len(jobs)} surowych ofert (JJIT)")
     except Exception as e:
         print(f"Blad pobierania pliku {file_key}: {e}")
         return
@@ -49,20 +48,15 @@ def transform_jjit():
         o_id = job.get('slug', 'brak')
         category = assign_category(title)
         
-        # 1. DATA
         raw_date = job.get('publishedAt')
         date_added = raw_date[:10] if isinstance(raw_date, str) and len(raw_date) >= 10 else datetime.now().strftime('%Y-%m-%d')
         
-        # 2. LOKALIZACJA I ZDALNIE
         workplace_type = str(job.get('workplaceType', '')).lower()
         fully_remote = (workplace_type == 'remote')
         
         places_list = []
-        if fully_remote:
-            places_list.append("Remote")
-            
-        if job.get('city'):
-            places_list.append(str(job.get('city')).strip())
+        if fully_remote: places_list.append("Remote")
+        if job.get('city'): places_list.append(str(job.get('city')).strip())
             
         for loc in job.get('locations', []):
             if isinstance(loc, dict) and loc.get('city'):
@@ -74,22 +68,37 @@ def transform_jjit():
                 unique_places.append(p)
                 
         location = ", ".join(unique_places) if unique_places else 'Polska'
-        
-        # 3. ZAROBKI
+        url = f"https://justjoin.it/offers/{o_id}" if o_id != 'brak' else ''
+
+        # --- NOWOŚĆ: Zarobki + Typ Umowy ---
         salary_min, salary_max, currency = None, None, 'PLN'
+        contract_type = 'Inna'
         emp_types = job.get('employmentTypes', [])
         
         if isinstance(emp_types, list):
             for emp in emp_types:
-                # Omijamy sztuczne przewalutowania portalu
                 if emp.get('currencySource') == 'original':
                     if emp.get('from') is not None or emp.get('to') is not None:
                         salary_min = emp.get('from')
                         salary_max = emp.get('to')
                         currency = str(emp.get('currency', 'PLN')).upper()
+                        
+                        # Wyciągamy typ umowy z pobranej sekcji zarobków
+                        c_type = str(emp.get('type', '')).lower()
+                        if 'b2b' in c_type:
+                            contract_type = 'B2B'
+                        elif 'permanent' in c_type or 'uop' in c_type:
+                            contract_type = 'UoP'
                         break
 
-        url = f"https://justjoin.it/offers/{o_id}" if o_id != 'brak' else ''
+        tech_list = []
+        skills = job.get('requiredSkills', [])
+        if isinstance(skills, list):
+            for skill in skills:
+                if isinstance(skill, str): tech_list.append(skill.strip())
+                elif isinstance(skill, dict) and 'name' in skill: tech_list.append(str(skill['name']).strip())
+                    
+        technologie_str = ", ".join(tech_list) if tech_list else ""
 
         processed_data.append({
             'id': o_id,
@@ -98,50 +107,49 @@ def transform_jjit():
             'company_name': str(company_name),
             'location': location,
             'remote': fully_remote,
+            'contract_type': contract_type, # <--- DODANA KOLUMNA
             'salary_min': salary_min,
             'salary_max': salary_max,
             'currency': currency,
             'url': url,
-            'date_added': date_added
+            'date_added': date_added,
+            'technologie': technologie_str
         })
 
-    # --- AGREGACJA ---
     df = pd.DataFrame(processed_data)
     df.drop_duplicates(subset=['id'], keep='first', inplace=True)
     df['remote'] = df['remote'].astype(bool) | df['location'].str.contains('Remote', na=False, case=False)
 
-    def scal_lokalizacje(seria_lokalizacji):
-        zbior_miast = set()
-        for loc in seria_lokalizacji:
-            if pd.notna(loc):
-                miasta = [m.strip() for m in str(loc).split(',')]
-                zbior_miast.update(miasta)
-        
-        lista_miast = [m for m in list(zbior_miast) if m.lower() != 'remote']
-        return ", ".join(sorted(lista_miast)) if lista_miast else "Brak (tylko zdalnie)"
+    def scal_lokalizacje(seria):
+        zbior = set()
+        for loc in seria:
+            if pd.notna(loc): zbior.update([m.strip() for m in str(loc).split(',')])
+        lista = [m for m in list(zbior) if m.lower() != 'remote']
+        return ", ".join(sorted(lista)) if lista else "Brak (tylko zdalnie)"
 
     sposob_agregacji = {
         'id': 'first',
         'kategoria': 'first',
         'location': scal_lokalizacje,
         'remote': 'max',
+        'contract_type': 'first', # <--- ZACHOWANIE KOLUMNY PRZY GRUPOWANIU
         'salary_min': 'first',
         'salary_max': 'first',
         'currency': 'first',
         'url': 'first',
-        'date_added': 'max'
+        'date_added': 'max',
+        'technologie': 'first'
     }
 
     df_grouped = df.groupby(['title', 'company_name'], as_index=False).agg(sposob_agregacji)
-    print(f"Po agregacji: {len(df_grouped)} unikalnych stanowisk (JJIT).")
+    print(f"Po agregacji: {len(df_grouped)} ofert (JJIT).")
     
-    # --- ZAPIS DO BAZY ---
     try:
         engine = create_engine(DB_URL)
         df_grouped.to_sql('poland_job_offers', engine, if_exists='append', index=False)
-        print("Zapisano dane z Just Join IT. Dopisano do tabeli!")
+        print("Zapisano do bazy (APPEND).")
     except Exception as e:
-        print(f"Blad zapisu bazy danych: {e}")
+        print(f"Blad zapisu bazy: {e}")
 
 if __name__ == "__main__":
     transform_jjit()

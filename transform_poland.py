@@ -35,49 +35,38 @@ def transform_poland():
     
     try:
         response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_key)
-        raw_data = response['Body'].read().decode('utf-8')
-        jobs = json.loads(raw_data)
+        jobs = json.loads(response['Body'].read().decode('utf-8'))
+        print(f"Wczytano {len(jobs)} surowych ofert (NFJ)")
     except Exception as e:
         print(f"Blad pobierania pliku {file_key}: {e}")
         return
 
     processed_data = []
     for job in jobs:
-        # 1. NAZWY FIRMY
         company_name = job.get('name') or job.get('companyName') or 'Nieznana firma'
         if isinstance(company_name, dict):
             company_name = company_name.get('name', 'Nieznana firma')
             
-        # 2. TYTUL STANOWISKA I KATEGORIA
         title = job.get('title', 'Brak tytulu')
         o_id = job.get('id', 'brak')
         category = assign_category(title)
         
-        # 3. DATA DODANIA
         raw_date = job.get('renewed') or job.get('posted') or job.get('timestamp')
         try:
-            if raw_date:
-                # Jesli to Unix Timestamp w milisekundach
-                if isinstance(raw_date, (int, float)) and raw_date > 9999999999:
-                    date_added = datetime.fromtimestamp(raw_date / 1000).strftime('%Y-%m-%d')
-                elif isinstance(raw_date, str):
-                    date_added = raw_date[:10] 
-                else:
-                    date_added = datetime.now().strftime('%Y-%m-%d')
+            if raw_date and isinstance(raw_date, (int, float)) and raw_date > 9999999999:
+                date_added = datetime.fromtimestamp(raw_date / 1000).strftime('%Y-%m-%d')
+            elif raw_date and isinstance(raw_date, str):
+                date_added = raw_date[:10] 
             else:
                 date_added = datetime.now().strftime('%Y-%m-%d')
-        except Exception:
+        except:
             date_added = datetime.now().strftime('%Y-%m-%d')
         
-        # 4. LOKALIZACJA
         places_list = []
         fully_remote = job.get('fullyRemote', False)
-        if fully_remote:
-            places_list.append("Remote")
+        if fully_remote: places_list.append("Remote")
             
-        location_data = job.get('location', {})
-        raw_places = location_data.get('places', []) if isinstance(location_data, dict) else []
-        
+        raw_places = job.get('location', {}).get('places', []) if isinstance(job.get('location'), dict) else []
         if isinstance(raw_places, list):
             seen_cities = set()
             for p in raw_places:
@@ -89,12 +78,26 @@ def transform_poland():
                         
         location = ", ".join(places_list) if places_list else 'Polska'
         
-        # 5. ZAROBKI I URL
         salary_data = job.get('salary', {})
         salary_min = salary_data.get('from', None)
         salary_max = salary_data.get('to', None)
         currency = salary_data.get('currency', 'PLN')
         url = f"https://nofluffjobs.com/pl/job/{o_id}" if o_id != 'brak' else ''
+
+        # --- NOWOŚĆ: Typ Umowy ---
+        contract_raw = str(salary_data.get('type', '')).lower()
+        if 'b2b' in contract_raw:
+            contract_type = 'B2B'
+        elif 'permanent' in contract_raw or 'uop' in contract_raw or 'employment' in contract_raw:
+            contract_type = 'UoP'
+        else:
+            contract_type = 'Inna'
+
+        tech_list = []
+        main_tech = job.get('technology')
+        if main_tech and isinstance(main_tech, str):
+            tech_list.append(main_tech.strip())
+        technologie_str = ", ".join(tech_list) if tech_list else ""
 
         processed_data.append({
             'id': o_id,
@@ -103,64 +106,49 @@ def transform_poland():
             'company_name': str(company_name),
             'location': location,
             'remote': fully_remote,
+            'contract_type': contract_type,  # <--- DODANA KOLUMNA
             'salary_min': salary_min,
             'salary_max': salary_max,
             'currency': currency,
             'url': url,
-            'date_added': date_added
+            'date_added': date_added,
+            'technologie': technologie_str
         })
 
-    # --- TWORZENIE TABELI I USUWANIE DUPLIKATOW PO ID ---
     df = pd.DataFrame(processed_data)
-    l_poczatkowa = len(df)
     df.drop_duplicates(subset=['id'], keep='first', inplace=True)
-    
-    # --- PRZENIESIENIE "REMOTE" Z LOKALIZACJI DO KOLUMNY ZDALNIE ---
     df['remote'] = df['remote'].astype(bool) | df['location'].str.contains('Remote', na=False, case=False)
 
-    # --- Lączenie "City Spammingu" i czyszczenie ---
-    def scal_lokalizacje(seria_lokalizacji):
-        zbior_miast = set()
-        for loc in seria_lokalizacji:
-            if pd.notna(loc):
-                miasta = [m.strip() for m in str(loc).split(',')]
-                zbior_miast.update(miasta)
-        
-        lista_miast = list(zbior_miast)
-        # Wycinamy "Remote" 
-        lista_miast = [m for m in lista_miast if m.lower() != 'remote']
-            
-        if lista_miast:
-            return ", ".join(sorted(lista_miast))
-        else:
-            return "Brak (tylko zdalnie)"
+    def scal_lokalizacje(seria):
+        zbior = set()
+        for loc in seria:
+            if pd.notna(loc): zbior.update([m.strip() for m in str(loc).split(',')])
+        lista = [m for m in list(zbior) if m.lower() != 'remote']
+        return ", ".join(sorted(lista)) if lista else "Brak (tylko zdalnie)"
 
     sposob_agregacji = {
         'id': 'first',
         'kategoria': 'first',
         'location': scal_lokalizacje,
         'remote': 'max',
+        'contract_type': 'first', # <--- ZACHOWANIE KOLUMNY PRZY GRUPOWANIU
         'salary_min': 'first',
         'salary_max': 'first',
         'currency': 'first',
         'url': 'first',
-        'date_added': 'max'
+        'date_added': 'max',
+        'technologie': 'first'
     }
 
-    # Grupowanie po Tytule i Firmie
     df_grouped = df.groupby(['title', 'company_name'], as_index=False).agg(sposob_agregacji)
+    print(f"Po agregacji: {len(df_grouped)} ofert (NFJ).")
     
-    l_koncowa = len(df_grouped)
-    print(f"Początkowa liczba pobranych ofert (po ID): {l_poczatkowa}")
-    print(f"Połączono klony z różnych miast. Zostało: {l_koncowa} unikalnych stanowisk.")
-    
-    # --- ZAPIS DO BAZY ---
     try:
         engine = create_engine(DB_URL)
         df_grouped.to_sql('poland_job_offers', engine, if_exists='replace', index=False)
-        print("Zapisano do bazy danych PostgreSQL. Dashboard gotowy!")
+        print("Zapisano do bazy (REPLACE).")
     except Exception as e:
-        print(f"Blad zapisu bazy danych: {e}")
+        print(f"Blad zapisu: {e}")
 
 if __name__ == "__main__":
     transform_poland()
