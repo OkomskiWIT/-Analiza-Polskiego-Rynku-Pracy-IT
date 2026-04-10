@@ -11,6 +11,7 @@ warnings.filterwarnings('ignore')
 
 # 1. POŁĄCZENIE Z BAZĄ DANYCH
 DB_URL = os.environ.get("DB_URL")
+engine = create_engine(DB_URL)
 
 print("Pobieranie danych z bazy Neon...")
 df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
