@@ -5,12 +5,14 @@ import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
 from botocore.client import Config
+from dotenv import load_dotenv
 
+load_dotenv()
+DB_URL = os.environ.get("DB_URL")
 S3_ENDPOINT = 'http://127.0.0.1:9000'
 S3_ACCESS_KEY = 'admin'
 S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
-DB_URL = os.environ.get("DB_URL")
 
 def assign_category(title_str):
     text = str(title_str).lower()
@@ -78,20 +80,21 @@ def transform_poland():
                         
         location = ", ".join(places_list) if places_list else 'Polska'
         
-        salary_data = job.get('salary', {})
+        salary_data = job.get('salary') or {}
         salary_min = salary_data.get('from', None)
         salary_max = salary_data.get('to', None)
         currency = salary_data.get('currency', 'PLN')
         url = f"https://nofluffjobs.com/pl/job/{o_id}" if o_id != 'brak' else ''
 
-        # --- NOWOŚĆ: Typ Umowy ---
+        # --- NOWOŚĆ: Logika szukająca B2B i UoP ---
+        found_contracts = set()
         contract_raw = str(salary_data.get('type', '')).lower()
         if 'b2b' in contract_raw:
-            contract_type = 'B2B'
-        elif 'permanent' in contract_raw or 'uop' in contract_raw or 'employment' in contract_raw:
-            contract_type = 'UoP'
-        else:
-            contract_type = 'Inna'
+            found_contracts.add('B2B')
+        if 'permanent' in contract_raw or 'uop' in contract_raw or 'employment' in contract_raw:
+            found_contracts.add('UoP')
+
+        contract_type = ", ".join(sorted(list(found_contracts))) if found_contracts else 'Inna'
 
         tech_list = []
         main_tech = job.get('technology')
@@ -106,7 +109,7 @@ def transform_poland():
             'company_name': str(company_name),
             'location': location,
             'remote': fully_remote,
-            'contract_type': contract_type,  # <--- DODANA KOLUMNA
+            'contract_type': contract_type,
             'salary_min': salary_min,
             'salary_max': salary_max,
             'currency': currency,
@@ -126,12 +129,19 @@ def transform_poland():
         lista = [m for m in list(zbior) if m.lower() != 'remote']
         return ", ".join(sorted(lista)) if lista else "Brak (tylko zdalnie)"
 
+    def scal_umowy(seria):
+        zbior = set()
+        for c in seria:
+            if pd.notna(c) and c != 'Inna':
+                zbior.update([x.strip() for x in str(c).split(',')])
+        return ", ".join(sorted(list(zbior))) if zbior else "Inna"
+
     sposob_agregacji = {
         'id': 'first',
         'kategoria': 'first',
         'location': scal_lokalizacje,
         'remote': 'max',
-        'contract_type': 'first', # <--- ZACHOWANIE KOLUMNY PRZY GRUPOWANIU
+        'contract_type': scal_umowy,
         'salary_min': 'first',
         'salary_max': 'first',
         'currency': 'first',

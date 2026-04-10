@@ -5,12 +5,14 @@ import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
 from botocore.client import Config
+from dotenv import load_dotenv
 
+load_dotenv()
+DB_URL = os.environ.get("DB_URL")
 S3_ENDPOINT = 'http://127.0.0.1:9000'
 S3_ACCESS_KEY = 'admin'
 S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
-DB_URL = os.environ.get("DB_URL")
 
 def assign_category(title_str):
     text = str(title_str).lower()
@@ -70,26 +72,30 @@ def transform_jjit():
         location = ", ".join(unique_places) if unique_places else 'Polska'
         url = f"https://justjoin.it/offers/{o_id}" if o_id != 'brak' else ''
 
-        # --- NOWOŚĆ: Zarobki + Typ Umowy ---
+        # --- NOWOŚĆ: Niezależne wyciąganie umów i zarobków ---
         salary_min, salary_max, currency = None, None, 'PLN'
-        contract_type = 'Inna'
+        found_contracts = set() # Używamy 'set', żeby uniknąć duplikatów (np. "B2B, B2B")
+        
         emp_types = job.get('employmentTypes', [])
         
         if isinstance(emp_types, list):
             for emp in emp_types:
-                if emp.get('currencySource') == 'original':
-                    if emp.get('from') is not None or emp.get('to') is not None:
-                        salary_min = emp.get('from')
-                        salary_max = emp.get('to')
-                        currency = str(emp.get('currency', 'PLN')).upper()
-                        
-                        # Wyciągamy typ umowy z pobranej sekcji zarobków
-                        c_type = str(emp.get('type', '')).lower()
-                        if 'b2b' in c_type:
-                            contract_type = 'B2B'
-                        elif 'permanent' in c_type or 'uop' in c_type:
-                            contract_type = 'UoP'
-                        break
+                # 1. Wyciągamy typ umowy bez względu na to, czy są podane zarobki
+                c_type = str(emp.get('type', '')).lower()
+                if 'b2b' in c_type:
+                    found_contracts.add('B2B')
+                elif 'permanent' in c_type or 'uop' in c_type or 'employment' in c_type:
+                    found_contracts.add('UoP')
+                
+                # 2. Wyciągamy zarobki (tylko pierwsze niepuste)
+                if salary_min is None and salary_max is None:
+                    if emp.get('currencySource') == 'original':
+                        if emp.get('from') is not None or emp.get('to') is not None:
+                            salary_min = emp.get('from')
+                            salary_max = emp.get('to')
+                            currency = str(emp.get('currency', 'PLN')).upper()
+
+        contract_type = ", ".join(sorted(list(found_contracts))) if found_contracts else 'Inna'
 
         tech_list = []
         skills = job.get('requiredSkills', [])
@@ -107,7 +113,7 @@ def transform_jjit():
             'company_name': str(company_name),
             'location': location,
             'remote': fully_remote,
-            'contract_type': contract_type, # <--- DODANA KOLUMNA
+            'contract_type': contract_type,
             'salary_min': salary_min,
             'salary_max': salary_max,
             'currency': currency,
@@ -127,12 +133,20 @@ def transform_jjit():
         lista = [m for m in list(zbior) if m.lower() != 'remote']
         return ", ".join(sorted(lista)) if lista else "Brak (tylko zdalnie)"
 
+    # NOWOŚĆ: Bezpieczne łączenie różnych typów umów dla tej samej oferty
+    def scal_umowy(seria):
+        zbior = set()
+        for c in seria:
+            if pd.notna(c) and c != 'Inna':
+                zbior.update([x.strip() for x in str(c).split(',')])
+        return ", ".join(sorted(list(zbior))) if zbior else "Inna"
+
     sposob_agregacji = {
         'id': 'first',
         'kategoria': 'first',
         'location': scal_lokalizacje,
         'remote': 'max',
-        'contract_type': 'first', # <--- ZACHOWANIE KOLUMNY PRZY GRUPOWANIU
+        'contract_type': scal_umowy, # Zmiana z 'first' na naszą funkcję łączącą
         'salary_min': 'first',
         'salary_max': 'first',
         'currency': 'first',
