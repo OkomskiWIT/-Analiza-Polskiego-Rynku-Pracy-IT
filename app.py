@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 DB_URL = st.secrets["DB_URL"]
 
@@ -18,11 +20,12 @@ def fetch_poland_data():
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
 
-tab_pl, tab_global, tab_tech, tab_ai = st.tabs([
+tab_pl, tab_global, tab_tech, tab_ai, tab_npl = st.tabs([
     "Rynek Polski & Zarobki", 
     "Rynek Globalny", 
     "🔥 Top Technologie", 
     "🤖 Kalkulator ML"
+    "🎯 Dopasuj Ofertę (NLP)"
 ])
 
 # --- Zakładka 1: Rynek Globalny ---
@@ -219,3 +222,74 @@ with tab_ai:
 
     except FileNotFoundError:
         st.error("Brak plików modelu (salary_model.pkl / model_columns.pkl).")
+        
+# --- Zakładka 5: System Rekomendacji NLP ---
+with tab_nlp:
+    st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
+    st.markdown("Algorytm przeanalizuje Twoje umiejętności i matematycznie dopasuje je do bazy ofert.")
+    
+    try:
+        df_nlp = fetch_poland_data()
+        
+        if not df_nlp.empty:
+            user_skills = st.text_area(
+                "Wpisz swoje technologie i doświadczenie (np. 'Python, SQL, AWS, Docker, 3 lata doświadczenia w budowaniu rurociągów danych'):",
+                height=100
+            )
+            
+            if st.button("Znajdź idealne oferty", type="primary"):
+                if len(user_skills) < 5:
+                    st.warning("Wpisz więcej informacji, aby algorytm miał na czym pracować!")
+                else:
+                    with st.spinner('Wektoryzacja danych i obliczanie macierzy podobieństwa...'):
+                        # 1. Przygotowanie "Korpusu" tekstu dla modelu
+                        df_nlp['technologie'] = df_nlp['technologie'].fillna('')
+                        df_nlp['title'] = df_nlp['title'].fillna('')
+                        df_nlp['kategoria'] = df_nlp['kategoria'].fillna('')
+                        
+                        # Łączymy cechy oferty w jeden ciąg tekstowy
+                        df_nlp['tekst_do_analizy'] = df_nlp['kategoria'] + " " + df_nlp['title'] + " " + df_nlp['technologie']
+                        corpus = df_nlp['tekst_do_analizy'].tolist()
+                        
+                        # 2. Inicjalizacja modelu TF-IDF
+                        vectorizer = TfidfVectorizer(stop_words='english')
+                        
+                        # 3. Uczenie modelu na bazie ofert i transformacja
+                        tfidf_matrix = vectorizer.fit_transform(corpus)
+                        
+                        # 4. Transformacja tekstu użytkownika
+                        user_tfidf = vectorizer.transform([user_skills])
+                        
+                        # 5. Obliczenie odległości kosinusowej (podobieństwa)
+                        cosine_similarities = cosine_similarity(user_tfidf, tfidf_matrix).flatten()
+                        
+                        # 6. Wyciągnięcie TOP 5 najbardziej podobnych ofert
+                        top_5_indices = cosine_similarities.argsort()[-5:][::-1]
+                        
+                        st.subheader("Oto 5 najlepszych dopasowań:")
+                        
+                        for i, idx in enumerate(top_5_indices):
+                            score = cosine_similarities[idx]
+                            row = df_nlp.iloc[idx]
+                            
+                            # Filtrujemy tylko oferty, które mają jakikolwiek sensowny % dopasowania
+                            if score > 0.05:
+                                with st.expander(f"{i+1}. {row['title']} w {row['company_name']} (Dopasowanie: {score*100:.1f}%)"):
+                                    st.write(f"**Lokalizacja:** {row['location']} | **Zdalnie:** {'Tak' if row['remote'] else 'Nie'}")
+                                    st.write(f"**Umowa:** {row['contract_type']}")
+                                    
+                                    # Formatyzowanie zarobków
+                                    zarobki = "Brak widełek"
+                                    if pd.notna(row['salary_min']) and pd.notna(row['salary_max']):
+                                        zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}"
+                                    st.write(f"**Zarobki:** {zarobki}")
+                                    
+                                    st.write(f"**Wymagane technologie:** {row['technologie']}")
+                                    st.markdown(f"[🔗 Kliknij, aby aplikować]({row['url']})")
+                            else:
+                                if i == 0:
+                                    st.info("Brak silnego dopasowania w bazie dla podanych umiejętności.")
+                                break
+
+    except Exception as e:
+        st.error(f"Błąd modułu NLP: {e}")
