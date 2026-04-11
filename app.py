@@ -29,23 +29,20 @@ def build_interactive_map(df):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     laczna_liczba_pinezek = 0
-    bledy_log = [] # Zbieramy logi, żeby wiedzieć co się psuje!
+    bledy_log = [] 
 
     for row in df.itertuples():
         coords_raw = getattr(row, 'coordinates', None)
         
-        # PANCERNY FIX: Bezpieczne sprawdzanie (odporne na listy z bazy danych)
         if coords_raw is None or (isinstance(coords_raw, float) and pd.isna(coords_raw)):
             continue
             
         try:
             coords_list = []
             
-            # Parsowanie danych
             if isinstance(coords_raw, str):
                 if coords_raw.strip() in ['[]', '']:
                     continue
-                # Jeśli baza zapisała JSON używając pojedynczych cudzysłowów, naprawiamy to w locie
                 try:
                     coords_list = json.loads(coords_raw)
                 except json.JSONDecodeError:
@@ -215,7 +212,7 @@ with tab_pl:
             # MAPA Z SYSTEMEM LOGOWANIA
             # ==========================================
             st.markdown("---")
-            st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
+            st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
 
             if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
                 with st.spinner("Przetwarzanie tysięcy koordynatów..."):
@@ -223,16 +220,19 @@ with tab_pl:
 
                 # DIAGNOSTYKA NA ŻYWO NA EKRANIE
                 if laczna_liczba_pinezek > 0:
-                    st.success(f"Sukces! Wygenerowano {laczna_liczba_pinezek} pinezek na mapie.")
+                    st.success(f"Sukces! Wygenerowano {laczna_liczba_pinezek} pinezek na mapie. Trwa renderowanie grafiki...")
                     if bledy_log:
                         st.warning("Udało się, ale kilka wierszy miało uszkodzone dane. Poniżej logi systemowe:")
                         st.write(bledy_log)
                         
-                    # Rysowanie stabilnej mapy za pomocą folium_static
-                    folium_static(m, width=1000, height=600)
+                    import streamlit.components.v1 as components
+                    m.save("temp_map.html")
+                    
+                    with open("temp_map.html", "r", encoding="utf-8") as f:
+                        html_data = f.read()
+                    components.html(html_data, height=650)
                 else:
                     st.error("Krytyczny błąd: Wygenerowano 0 pinezek. Powód (logi poniżej):")
-                    st.write(bledy_log if bledy_log else "Brak logów. Tablica coordinates prawdopodobnie była pusta.")
 
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
