@@ -25,49 +25,44 @@ def fetch_poland_data():
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
 # --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
-# --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
-def build_interactive_map(df, max_pins=1000): # NOWOŚĆ: Limit pinezek
+def build_interactive_map(df, max_pins=1000):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
-    laczna_liczba_pinezek = 0
-    bledy_log = [] 
+    
+    grouped_offers = {}
+    laczna_liczba_wczytanych_ofert = 0
 
+    # KROK 1: Zbieranie i grupowanie danych z wierszy
     for row in df.itertuples():
-        # INŻYNIERYJNY BEZPIECZNIK: Przerwij pętlę, jeśli osiągnęliśmy limit przeglądarki
-        if laczna_liczba_pinezek >= max_pins:
-            break
+        if laczna_liczba_wczytanych_ofert >= max_pins:
+            break 
 
         coords_raw = getattr(row, 'coordinates', None)
-        
         if coords_raw is None or (isinstance(coords_raw, float) and pd.isna(coords_raw)):
             continue
             
         try:
             coords_list = []
-            
             if isinstance(coords_raw, str):
-                if coords_raw.strip() in ['[]', '']:
-                    continue
-                try:
-                    coords_list = json.loads(coords_raw)
-                except json.JSONDecodeError:
-                    fixed_raw = coords_raw.replace("'", '"')
-                    coords_list = json.loads(fixed_raw)
+                if coords_raw.strip() in ['[]', '']: continue
+                try: coords_list = json.loads(coords_raw)
+                except: coords_list = json.loads(coords_raw.replace("'", '"'))
             elif isinstance(coords_raw, list):
                 coords_list = coords_raw
-            else:
-                continue
+            else: continue
                 
             for loc in coords_list:
-                # Sprawdzenie limitu również wewnątrz zagnieżdżonej pętli
-                if laczna_liczba_pinezek >= max_pins:
-                    break
+                if laczna_liczba_wczytanych_ofert >= max_pins: break
 
                 lat = loc.get('lat')
                 lon = loc.get('lon')
                 
                 if lat and lon:
                     lat, lon = float(lat), float(lon)
+                    
+                    # Tworzymy unikalny klucz matematyczny dla tego biura
+                    coord_key = (lat, lon)
+                    
                     ulica = loc.get('street', '')
                     miasto = loc.get('city', '')
                     adres = f"{ulica}, {miasto}" if ulica else miasto
@@ -76,33 +71,57 @@ def build_interactive_map(df, max_pins=1000): # NOWOŚĆ: Limit pinezek
                     if pd.notna(getattr(row, 'salary_min', None)) and pd.notna(getattr(row, 'salary_max', None)):
                         zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
                     
-                    popup_html = f"""
-                    <div style="min-width: 200px; font-family: Arial, sans-serif;">
-                        <b style="font-size: 14px;">🏢 {row.company_name}</b><br>
-                        <span style="color: #0066cc; font-weight: bold;">💼 {row.title}</span><br>
-                        <hr style="margin: 5px 0;">
-                        💰 <b>{zarobki}</b><br>
-                        📍 {adres}<br>
-                        <br>
-                        <a href="{row.url}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
-                    </div>
-                    """
+                    # Jeśli ten punkt na mapie jeszcze nie istnieje, tworzymy go
+                    if coord_key not in grouped_offers:
+                        grouped_offers[coord_key] = {
+                            'adres': adres,
+                            'firmy': set(), # Używamy zbioru (set), żeby firmy się nie powtarzały
+                            'oferty_html': []
+                        }
                     
-                    tooltip_text = f"{row.company_name} - {row.title}"
+                    # Dodajemy ofertę do "pudełka" dla tego biurowca
+                    grouped_offers[coord_key]['firmy'].add(row.company_name)
+                    offer_html = f"<li style='margin-bottom: 5px;'><b>{row.title}</b><br>💰 {zarobki} | <a href='{row.url}' target='_blank'>Aplikuj</a></li>"
+                    grouped_offers[coord_key]['oferty_html'].append(offer_html)
                     
-                    folium.Marker(
-                        location=[lat, lon],
-                        popup=folium.Popup(popup_html, max_width=300),
-                        tooltip=tooltip_text,
-                        icon=folium.Icon(color="blue", icon="info-sign")
-                    ).add_to(marker_cluster)
+                    laczna_liczba_wczytanych_ofert += 1
                     
-                    laczna_liczba_pinezek += 1
         except Exception as e:
-            if len(bledy_log) < 3: 
-                bledy_log.append(f"Błąd ({row.company_name}): {str(e)} | Typ danych: {type(coords_raw)}")
+            pass # Ciche ignorowanie błędów pojedynczych JSONów
+
+    # KROK 2: Rysowanie JEDNEJ pinezki na każdą grupę (biuro)
+    for (lat, lon), data in grouped_offers.items():
+        nazwy_firm = ", ".join(list(data['firmy']))
+        liczba_ofert = len(data['oferty_html'])
+        
+        # Łączymy wszystkie oferty w jedną listę HTML
+        lista_ofert_html = "".join(data['oferty_html'])
+        
+        # Scrollowany dymek (max-height: 200px; overflow-y: auto;)
+        popup_html = f"""
+        <div style="min-width: 250px; font-family: Arial, sans-serif;">
+            <b style="font-size: 14px; color: #0066cc;">🏢 {nazwy_firm}</b><br>
+            📍 {data['adres']}<br>
+            <i>Liczba ofert w tej lokalizacji: <b>{liczba_ofert}</b></i>
+            <hr style="margin: 5px 0;">
+            <div style="max-height: 200px; overflow-y: auto; background-color: #f9f9f9; padding: 5px; border-radius: 4px;">
+                <ul style="padding-left: 20px; margin: 0; font-size: 12px;">
+                    {lista_ofert_html}
+                </ul>
+            </div>
+        </div>
+        """
+        
+        tooltip_text = f"{nazwy_firm} ({liczba_ofert} ofert)"
+        
+        folium.Marker(
+            location=[lat, lon],
+            popup=folium.Popup(popup_html, max_width=350),
+            tooltip=tooltip_text,
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(marker_cluster)
             
-    return m, laczna_liczba_pinezek, bledy_log
+    return m, laczna_liczba_wczytanych_ofert, []
 
 # --- KONFIGURACJA APLIKACJI ---
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
