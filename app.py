@@ -191,7 +191,13 @@ with tab_pl:
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
             st.info("Mapa zawiera tysiące punktów geolokalizacyjnych. Aby nie obciążać przeglądarki, kliknij poniższy przycisk, aby ją załadować.")
-            
+            # --- DEBUGGING (DO USUNIĘCIA PÓŹNIEJ) ---
+            st.warning("🔍 X-RAY Bazy Danych:")
+            st.write("Czy kolumna coordinates w ogóle istnieje?", 'coordinates' in df_pl.columns)
+            if 'coordinates' in df_pl.columns:
+                st.write("Próbka z 5 pierwszych wierszy:")
+                st.dataframe(df_pl[['company_name', 'coordinates']].head(5))
+            # ----------------------------------------
             if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
                 with st.spinner("Przetwarzanie tysięcy koordynatów..."):
                     m, laczna_liczba_pinezek = build_interactive_map(df_pl)
