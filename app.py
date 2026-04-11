@@ -11,6 +11,7 @@ from streamlit_folium import st_folium
 
 DB_URL = st.secrets["DB_URL"]
 
+# --- FUNKCJE POBIERAJĄCE DANE ---
 @st.cache_data(ttl=3600)
 def fetch_global_data():
     engine = create_engine(DB_URL)
@@ -21,6 +22,61 @@ def fetch_poland_data():
     engine = create_engine(DB_URL)
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
+# --- NOWOŚĆ: FUNKCJA BUDUJĄCA MAPĘ W PAMIĘCI RAM (CACHE) ---
+@st.cache_resource(ttl=3600)
+def build_interactive_map(df):
+    m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
+    marker_cluster = MarkerCluster().add_to(m)
+    laczna_liczba_pinezek = 0
+
+    # Używamy itertuples() zamiast iterrows() - gigantyczny skok wydajności!
+    for row in df.itertuples():
+        coords_raw = row.coordinates
+        
+        if pd.notna(coords_raw) and coords_raw != '[]':
+            try:
+                coords_list = json.loads(coords_raw)
+                for loc in coords_list:
+                    lat = loc.get('lat')
+                    lon = loc.get('lon')
+                    
+                    if lat and lon:
+                        ulica = loc.get('street', '')
+                        miasto = loc.get('city', '')
+                        adres = f"{ulica}, {miasto}" if ulica else miasto
+                        
+                        zarobki = "Brak widełek"
+                        if pd.notna(row.salary_min) and pd.notna(row.salary_max):
+                            zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
+                        
+                        popup_html = f"""
+                        <div style="min-width: 200px; font-family: Arial, sans-serif;">
+                            <b style="font-size: 14px;">🏢 {row.company_name}</b><br>
+                            <span style="color: #0066cc; font-weight: bold;">💼 {row.title}</span><br>
+                            <hr style="margin: 5px 0;">
+                            💰 <b>{zarobki}</b><br>
+                            📍 {adres}<br>
+                            <br>
+                            <a href="{row.url}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
+                        </div>
+                        """
+                        
+                        tooltip_text = f"{row.company_name} - {row.title}"
+                        
+                        folium.Marker(
+                            location=[lat, lon],
+                            popup=folium.Popup(popup_html, max_width=300),
+                            tooltip=tooltip_text,
+                            icon=folium.Icon(color="blue", icon="info-sign")
+                        ).add_to(marker_cluster)
+                        
+                        laczna_liczba_pinezek += 1
+            except Exception:
+                pass # Ciche ignorowanie uszkodzonych JSONów
+                
+    return m, laczna_liczba_pinezek
+
+# --- KONFIGURACJA APLIKACJI ---
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
 
@@ -131,65 +187,14 @@ with tab_pl:
                 st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
 
             # ==========================================
-            # NOWA INTERAKTYWNA MAPA (FOLIUM)
+            # ZOPTYMALIZOWANA MAPA FOLIUM
             # ==========================================
             st.markdown("---")
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
-            # 1. Inicjalizacja mapy wycentrowanej na Polskę
-            m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
+            with st.spinner("Inicjalizacja mapy (pobieranie koordynat)..."):
+                m, laczna_liczba_pinezek = build_interactive_map(df_pl)
 
-            # 2. Utworzenie klastra
-            marker_cluster = MarkerCluster().add_to(m)
-
-            laczna_liczba_pinezek = 0
-
-            # 3. Przechodzimy przez wiersze z precyzyjnymi współrzędnymi
-            for index, row in df_pl.iterrows():
-                coords_raw = row.get('coordinates')
-                
-                if pd.notna(coords_raw) and coords_raw != '[]':
-                    try:
-                        coords_list = json.loads(coords_raw)
-                        for loc in coords_list:
-                            lat = loc.get('lat')
-                            lon = loc.get('lon')
-                            
-                            if lat and lon:
-                                ulica = loc.get('street', '')
-                                miasto = loc.get('city', '')
-                                adres = f"{ulica}, {miasto}" if ulica else miasto
-                                
-                                zarobki = "Brak widełek"
-                                if pd.notna(row['salary_min']) and pd.notna(row['salary_max']):
-                                    zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}"
-                                
-                                popup_html = f"""
-                                <div style="min-width: 200px; font-family: Arial, sans-serif;">
-                                    <b style="font-size: 14px;">🏢 {row['company_name']}</b><br>
-                                    <span style="color: #0066cc; font-weight: bold;">💼 {row['title']}</span><br>
-                                    <hr style="margin: 5px 0;">
-                                    💰 <b>{zarobki}</b><br>
-                                    📍 {adres}<br>
-                                    <br>
-                                    <a href="{row['url']}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
-                                </div>
-                                """
-                                
-                                tooltip_text = f"{row['company_name']} - {row['title']}"
-                                
-                                folium.Marker(
-                                    location=[lat, lon],
-                                    popup=folium.Popup(popup_html, max_width=300),
-                                    tooltip=tooltip_text,
-                                    icon=folium.Icon(color="blue", icon="info-sign")
-                                ).add_to(marker_cluster)
-                                
-                                laczna_liczba_pinezek += 1
-                    except Exception as e:
-                        pass
-
-            # 4. Wyświetlenie mapy
             if laczna_liczba_pinezek > 0:
                 st_folium(m, width=1000, height=600, returned_objects=[])
             else:
@@ -288,28 +293,17 @@ with tab_nlp:
                     st.warning("Wpisz więcej informacji, aby algorytm miał na czym pracować!")
                 else:
                     with st.spinner('Wektoryzacja danych i obliczanie macierzy podobieństwa...'):
-                        # 1. Przygotowanie "Korpusu" tekstu dla modelu
                         df_nlp['technologie'] = df_nlp['technologie'].fillna('')
                         df_nlp['title'] = df_nlp['title'].fillna('')
                         df_nlp['kategoria'] = df_nlp['kategoria'].fillna('')
                         
-                        # Łączymy cechy oferty w jeden ciąg tekstowy
                         df_nlp['tekst_do_analizy'] = df_nlp['kategoria'] + " " + df_nlp['title'] + " " + df_nlp['technologie']
                         corpus = df_nlp['tekst_do_analizy'].tolist()
                         
-                        # 2. Inicjalizacja modelu TF-IDF
                         vectorizer = TfidfVectorizer(stop_words='english')
-                        
-                        # 3. Uczenie modelu na bazie ofert i transformacja
                         tfidf_matrix = vectorizer.fit_transform(corpus)
-                        
-                        # 4. Transformacja tekstu użytkownika
                         user_tfidf = vectorizer.transform([user_skills])
-                        
-                        # 5. Obliczenie odległości kosinusowej (podobieństwa)
                         cosine_similarities = cosine_similarity(user_tfidf, tfidf_matrix).flatten()
-                        
-                        # 6. Wyciągnięcie TOP 5 najbardziej podobnych ofert
                         top_5_indices = cosine_similarities.argsort()[-5:][::-1]
                         
                         st.subheader("Oto 5 najlepszych dopasowań:")
@@ -318,13 +312,11 @@ with tab_nlp:
                             score = cosine_similarities[idx]
                             row = df_nlp.iloc[idx]
                             
-                            # Filtrujemy tylko oferty, które mają jakikolwiek sensowny % dopasowania
                             if score > 0.05:
                                 with st.expander(f"{i+1}. {row['title']} w {row['company_name']} (Dopasowanie: {score*100:.1f}%)"):
                                     st.write(f"**Lokalizacja:** {row['location']} | **Zdalnie:** {'Tak' if row['remote'] else 'Nie'}")
                                     st.write(f"**Umowa:** {row['contract_type']}")
                                     
-                                    # Formatyzowanie zarobków
                                     zarobki = "Brak widełek"
                                     if pd.notna(row['salary_min']) and pd.notna(row['salary_max']):
                                         zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}"
