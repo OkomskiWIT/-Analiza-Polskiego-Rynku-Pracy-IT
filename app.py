@@ -366,8 +366,43 @@ with tab_ai:
             st.success(f"Estymowane widełki: **{prediction:,.0f} PLN**")
             st.caption(f"MAE modelu XGBoost: ~4723 PLN.")
 
+        # ==========================================
+        # NOWOŚĆ: EXPLAINABLE AI (XAI)
+        # ==========================================
+        st.markdown("---")
+        st.subheader("🧠 Wyjaśnialne AI (Co wpływa na pensję?)")
+        st.markdown("Poniższy wykres otwiera *czarną skrzynkę* algorytmu ML. Pokazuje matematyczną wagę (Feature Importance) poszczególnych cech, czyli na co sztuczna inteligencja zwraca największą uwagę wyceniając pracownika.")
+        
+        # Sprawdzamy, czy model posiada atrybut feature_importances_
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+            
+            # Zestawiamy nazwy kolumn z ich matematyczną wagą
+            df_importance = pd.DataFrame({
+                'Cecha': model_columns,
+                'Waga (%)': importances * 100 # Zamiana na procenty dla czytelności
+            })
+            
+            # Wyciągamy top 10 najważniejszych cech, odrzucając te mało istotne
+            df_importance = df_importance.sort_values(by='Waga (%)', ascending=False).head(10)
+            
+            # Rysujemy wykres horyzontalny 
+            fig_ai, ax_ai = plt.subplots(figsize=(10, 5))
+            
+            # Używamy [::-1] by odwrócić kolejność - chcemy najdłuższy pasek na samej górze wykresu
+            ax_ai.barh(df_importance['Cecha'][::-1], df_importance['Waga (%)'][::-1], color='#ff4b4b')
+            
+            ax_ai.set_xlabel('Wpływ na ostateczną pensję (%)')
+            ax_ai.set_title('Top 10 czynników podbijających wycenę kandydata')
+            
+            st.pyplot(fig_ai)
+        else:
+            st.info("Załadowany model nie wspiera wyodrębniania ważności cech.")
+
     except FileNotFoundError:
         st.error("Brak plików modelu (salary_model.pkl / model_columns.pkl).")
+    except Exception as e:
+        st.error(f"Błąd analizy modelu: {e}")
         
 # --- Zakładka 5: System Rekomendacji NLP ---
 with tab_nlp:
