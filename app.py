@@ -373,27 +373,41 @@ with tab_ai:
         st.subheader("🧠 Wyjaśnialne AI (Co wpływa na pensję?)")
         st.markdown("Poniższy wykres otwiera *czarną skrzynkę* algorytmu ML. Pokazuje matematyczną wagę (Feature Importance) poszczególnych cech, czyli na co sztuczna inteligencja zwraca największą uwagę wyceniając pracownika.")
         
-        # Sprawdzamy, czy model posiada atrybut feature_importances_
         if hasattr(model, 'feature_importances_'):
             importances = model.feature_importances_
             
-            # Zestawiamy nazwy kolumn z ich matematyczną wagą
             df_importance = pd.DataFrame({
                 'Cecha': model_columns,
-                'Waga (%)': importances * 100 # Zamiana na procenty dla czytelności
+                'Waga (%)': importances * 100 
             })
             
-            # Wyciągamy top 10 najważniejszych cech, odrzucając te mało istotne
             df_importance = df_importance.sort_values(by='Waga (%)', ascending=False).head(10)
             
-            # Rysujemy wykres horyzontalny 
+            def format_label(col_name):
+                translations = {
+                    'seniority_': 'Poziom: ',
+                    'kategoria_': 'Kategoria: ',
+                    'location_': 'Lokalizacja: ',
+                    'contract_type_': 'Umowa: ',
+                    'tech_': 'Tech: '
+                }
+                for eng, pl in translations.items():
+                    if col_name.startswith(eng):
+                        clean_name = col_name.replace(eng, pl)
+                        return clean_name[:35] + "..." if len(clean_name) > 35 else clean_name
+                return col_name
+            
+            df_importance['Cecha_Display'] = df_importance['Cecha'].apply(format_label)
+            
             fig_ai, ax_ai = plt.subplots(figsize=(10, 5))
             
-            # Używamy [::-1] by odwrócić kolejność - chcemy najdłuższy pasek na samej górze wykresu
-            ax_ai.barh(df_importance['Cecha'][::-1], df_importance['Waga (%)'][::-1], color='#ff4b4b')
+            ax_ai.barh(df_importance['Cecha_Display'][::-1], df_importance['Waga (%)'][::-1], color='#ff4b4b')
             
             ax_ai.set_xlabel('Wpływ na ostateczną pensję (%)')
             ax_ai.set_title('Top 10 czynników podbijających wycenę kandydata')
+            
+
+            plt.tight_layout() 
             
             st.pyplot(fig_ai)
         else:
