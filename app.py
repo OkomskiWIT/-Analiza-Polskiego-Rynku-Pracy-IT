@@ -7,7 +7,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 import folium
 from folium.plugins import MarkerCluster
-import streamlit.components.v1 as components  
+
+# NOWOŚĆ: Używamy folium_static, które jest w 100% kompatybilne i bezpieczne dla chmury
+from streamlit_folium import st_folium, folium_static
 
 DB_URL = st.secrets["DB_URL"]
 
@@ -22,66 +24,82 @@ def fetch_poland_data():
     engine = create_engine(DB_URL)
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
-# --- ZOPTYMALIZOWANA FUNKCJA BUDUJĄCA MAPĘ ---
-# --- ZOPTYMALIZOWANA FUNKCJA BUDUJĄCA MAPĘ (BEZ CACHE) ---
+# --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
 def build_interactive_map(df):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     laczna_liczba_pinezek = 0
+    bledy_log = [] # Zbieramy logi, żeby wiedzieć co się psuje!
 
     for row in df.itertuples():
-        coords_raw = row.coordinates
+        coords_raw = getattr(row, 'coordinates', None)
         
-        if pd.notna(coords_raw):
-            try:
-                if isinstance(coords_raw, str):
-                    if coords_raw.strip() == '[]':
-                        continue
-                    coords_list = json.loads(coords_raw)
-                elif isinstance(coords_raw, list):
-                    coords_list = coords_raw
-                else:
+        # PANCERNY FIX: Bezpieczne sprawdzanie (odporne na listy z bazy danych)
+        if coords_raw is None or (isinstance(coords_raw, float) and pd.isna(coords_raw)):
+            continue
+            
+        try:
+            coords_list = []
+            
+            # Parsowanie danych
+            if isinstance(coords_raw, str):
+                if coords_raw.strip() in ['[]', '']:
                     continue
-                    
-                for loc in coords_list:
-                    lat = loc.get('lat')
-                    lon = loc.get('lon')
-                    
-                    if lat and lon:
-                        ulica = loc.get('street', '')
-                        miasto = loc.get('city', '')
-                        adres = f"{ulica}, {miasto}" if ulica else miasto
-                        
-                        zarobki = "Brak widełek"
-                        if pd.notna(row.salary_min) and pd.notna(row.salary_max):
-                            zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
-                        
-                        popup_html = f"""
-                        <div style="min-width: 200px; font-family: Arial, sans-serif;">
-                            <b style="font-size: 14px;">🏢 {row.company_name}</b><br>
-                            <span style="color: #0066cc; font-weight: bold;">💼 {row.title}</span><br>
-                            <hr style="margin: 5px 0;">
-                            💰 <b>{zarobki}</b><br>
-                            📍 {adres}<br>
-                            <br>
-                            <a href="{row.url}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
-                        </div>
-                        """
-                        
-                        tooltip_text = f"{row.company_name} - {row.title}"
-                        
-                        folium.Marker(
-                            location=[lat, lon],
-                            popup=folium.Popup(popup_html, max_width=300),
-                            tooltip=tooltip_text,
-                            icon=folium.Icon(color="blue", icon="info-sign")
-                        ).add_to(marker_cluster)
-                        
-                        laczna_liczba_pinezek += 1
-            except Exception as e:
-                pass 
+                # Jeśli baza zapisała JSON używając pojedynczych cudzysłowów, naprawiamy to w locie
+                try:
+                    coords_list = json.loads(coords_raw)
+                except json.JSONDecodeError:
+                    fixed_raw = coords_raw.replace("'", '"')
+                    coords_list = json.loads(fixed_raw)
+            elif isinstance(coords_raw, list):
+                coords_list = coords_raw
+            else:
+                continue
                 
-    return m, laczna_liczba_pinezek
+            # Wyciąganie szerokości i długości
+            for loc in coords_list:
+                lat = loc.get('lat')
+                lon = loc.get('lon')
+                
+                if lat and lon:
+                    # Upewniamy się, że to na pewno liczby zmiennoprzecinkowe (wymóg Folium)
+                    lat, lon = float(lat), float(lon)
+                    
+                    ulica = loc.get('street', '')
+                    miasto = loc.get('city', '')
+                    adres = f"{ulica}, {miasto}" if ulica else miasto
+                    
+                    zarobki = "Brak widełek"
+                    if pd.notna(getattr(row, 'salary_min', None)) and pd.notna(getattr(row, 'salary_max', None)):
+                        zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
+                    
+                    popup_html = f"""
+                    <div style="min-width: 200px; font-family: Arial, sans-serif;">
+                        <b style="font-size: 14px;">🏢 {row.company_name}</b><br>
+                        <span style="color: #0066cc; font-weight: bold;">💼 {row.title}</span><br>
+                        <hr style="margin: 5px 0;">
+                        💰 <b>{zarobki}</b><br>
+                        📍 {adres}<br>
+                        <br>
+                        <a href="{row.url}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
+                    </div>
+                    """
+                    
+                    tooltip_text = f"{row.company_name} - {row.title}"
+                    
+                    folium.Marker(
+                        location=[lat, lon],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=tooltip_text,
+                        icon=folium.Icon(color="blue", icon="info-sign")
+                    ).add_to(marker_cluster)
+                    
+                    laczna_liczba_pinezek += 1
+        except Exception as e:
+            if len(bledy_log) < 3: # Zapisujemy tylko pierwsze 3 błędy, by nie spamować
+                bledy_log.append(f"Błąd ({row.company_name}): {str(e)} | Typ danych: {type(coords_raw)}")
+            
+    return m, laczna_liczba_pinezek, bledy_log
 
 # --- KONFIGURACJA APLIKACJI ---
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
@@ -194,21 +212,27 @@ with tab_pl:
                 st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
 
             # ==========================================
-            # BEZPIECZNA MAPA WYWOŁYWANA PRZYCISKIEM
+            # MAPA Z SYSTEMEM LOGOWANIA
             # ==========================================
             st.markdown("---")
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
-            st.info("Mapa zawiera tysiące punktów geolokalizacyjnych. Aby nie obciążać przeglądarki, kliknij poniższy przycisk, aby ją załadować.")
             if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
                 with st.spinner("Przetwarzanie tysięcy koordynatów..."):
-                    m, laczna_liczba_pinezek = build_interactive_map(df_pl)
+                    m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl)
 
+                # DIAGNOSTYKA NA ŻYWO NA EKRANIE
                 if laczna_liczba_pinezek > 0:
-                    # NOWOŚĆ: Osadzenie czystego HTMLa zamiast użycia st_folium
-                    components.html(m._repr_html_(), height=600)
+                    st.success(f"Sukces! Wygenerowano {laczna_liczba_pinezek} pinezek na mapie.")
+                    if bledy_log:
+                        st.warning("Udało się, ale kilka wierszy miało uszkodzone dane. Poniżej logi systemowe:")
+                        st.write(bledy_log)
+                        
+                    # Rysowanie stabilnej mapy za pomocą folium_static
+                    folium_static(m, width=1000, height=600)
                 else:
-                    st.warning("Brak precyzyjnych danych geolokalizacyjnych do wyświetlenia na mapie.")
+                    st.error("Krytyczny błąd: Wygenerowano 0 pinezek. Powód (logi poniżej):")
+                    st.write(bledy_log if bledy_log else "Brak logów. Tablica coordinates prawdopodobnie była pusta.")
 
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
