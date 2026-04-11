@@ -290,7 +290,6 @@ with tab_tech:
                             background_color='white', 
                             colormap='viridis', # paleta barw
                             max_words=100,
-                            border_color='black'
                         ).generate_from_frequencies(tech_counts)
                         
                         # Renderowanie na ekranie używając biblioteki matplotlib
