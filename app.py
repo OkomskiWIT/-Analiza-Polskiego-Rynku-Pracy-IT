@@ -25,13 +25,18 @@ def fetch_poland_data():
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
 # --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
-def build_interactive_map(df):
+# --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
+def build_interactive_map(df, max_pins=1000): # NOWOŚĆ: Limit pinezek
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     laczna_liczba_pinezek = 0
     bledy_log = [] 
 
     for row in df.itertuples():
+        # INŻYNIERYJNY BEZPIECZNIK: Przerwij pętlę, jeśli osiągnęliśmy limit przeglądarki
+        if laczna_liczba_pinezek >= max_pins:
+            break
+
         coords_raw = getattr(row, 'coordinates', None)
         
         if coords_raw is None or (isinstance(coords_raw, float) and pd.isna(coords_raw)):
@@ -53,15 +58,16 @@ def build_interactive_map(df):
             else:
                 continue
                 
-            # Wyciąganie szerokości i długości
             for loc in coords_list:
+                # Sprawdzenie limitu również wewnątrz zagnieżdżonej pętli
+                if laczna_liczba_pinezek >= max_pins:
+                    break
+
                 lat = loc.get('lat')
                 lon = loc.get('lon')
                 
                 if lat and lon:
-                    # Upewniamy się, że to na pewno liczby zmiennoprzecinkowe (wymóg Folium)
                     lat, lon = float(lat), float(lon)
-                    
                     ulica = loc.get('street', '')
                     miasto = loc.get('city', '')
                     adres = f"{ulica}, {miasto}" if ulica else miasto
@@ -93,7 +99,7 @@ def build_interactive_map(df):
                     
                     laczna_liczba_pinezek += 1
         except Exception as e:
-            if len(bledy_log) < 3: # Zapisujemy tylko pierwsze 3 błędy, by nie spamować
+            if len(bledy_log) < 3: 
                 bledy_log.append(f"Błąd ({row.company_name}): {str(e)} | Typ danych: {type(coords_raw)}")
             
     return m, laczna_liczba_pinezek, bledy_log
@@ -220,19 +226,17 @@ with tab_pl:
 
                 # DIAGNOSTYKA NA ŻYWO NA EKRANIE
                 if laczna_liczba_pinezek > 0:
-                    st.success(f"Sukces! Wygenerowano {laczna_liczba_pinezek} pinezek na mapie. Trwa renderowanie grafiki...")
-                    if bledy_log:
-                        st.warning("Udało się, ale kilka wierszy miało uszkodzone dane. Poniżej logi systemowe:")
-                        st.write(bledy_log)
-                        
+                    st.success(f"Sukces! Załadowano próbkę {laczna_liczba_pinezek} ofert na mapę, by zachować płynność działania przeglądarki.")
+                    
                     import streamlit.components.v1 as components
-                    m.save("temp_map.html")
+                    m.save("temp_map.html") 
                     
                     with open("temp_map.html", "r", encoding="utf-8") as f:
-                        html_data = f.read()
+                        html_data = f.read() 
+                        
                     components.html(html_data, height=650)
                 else:
-                    st.error("Krytyczny błąd: Wygenerowano 0 pinezek. Powód (logi poniżej):")
+                    st.error("Krytyczny błąd: Wygenerowano 0 pinezek.")
 
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
