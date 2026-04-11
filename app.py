@@ -4,6 +4,10 @@ from sqlalchemy import create_engine
 import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import json
+import folium
+from folium.plugins import MarkerCluster
+from streamlit_folium import st_folium
 
 DB_URL = st.secrets["DB_URL"]
 
@@ -88,7 +92,7 @@ with tab_pl:
                 "company_name": st.column_config.TextColumn("Firma", width="medium"),
                 "location": st.column_config.TextColumn("Lokalizacja", width="medium"),
                 "remote": st.column_config.TextColumn("Zdalnie", width=70),
-                "contract_type": st.column_config.TextColumn("Umowa", width="small"),  # <--- DODANA KOLUMNA
+                "contract_type": st.column_config.TextColumn("Umowa", width="small"),
                 "salary_min": st.column_config.NumberColumn("Pensja Min", format="%d", width="small"),
                 "salary_max": st.column_config.NumberColumn("Pensja Max", format="%d", width="small"),
                 "currency": st.column_config.TextColumn("Waluta", width=60),
@@ -126,28 +130,70 @@ with tab_pl:
                 srednia_kategorie = df_pl.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
                 st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
 
+            # ==========================================
+            # NOWA INTERAKTYWNA MAPA (FOLIUM)
+            # ==========================================
             st.markdown("---")
-            st.subheader("🗺️ Mapa Ofert Pracy")
+            st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
-            coords = {
-                'Warszawa': [52.2297, 21.0122], 'Kraków': [50.0647, 19.9450],
-                'Wrocław': [51.1079, 17.0385], 'Poznań': [52.4064, 16.9252],
-                'Gdańsk': [54.3520, 18.6466], 'Katowice': [50.2649, 19.0238],
-                'Łódź': [51.7592, 19.4560], 'Szczecin': [53.4285, 14.5528],
-                'Lublin': [51.2465, 22.5684], 'Białystok': [53.1325, 23.1688]
-            }
-            
-            map_data = []
+            # 1. Inicjalizacja mapy wycentrowanej na Polskę
+            m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
+
+            # 2. Utworzenie klastra
+            marker_cluster = MarkerCluster().add_to(m)
+
+            laczna_liczba_pinezek = 0
+
+            # 3. Przechodzimy przez wiersze z precyzyjnymi współrzędnymi
             for index, row in df_pl.iterrows():
-                miasto = str(row['location']).split(',')[0].strip()
-                if miasto in coords:
-                    map_data.append({'lat': coords[miasto][0], 'lon': coords[miasto][1]})
-            
-            df_map = pd.DataFrame(map_data)
-            if not df_map.empty:
-                st.map(df_map, zoom=5)
+                coords_raw = row.get('coordinates')
+                
+                if pd.notna(coords_raw) and coords_raw != '[]':
+                    try:
+                        coords_list = json.loads(coords_raw)
+                        for loc in coords_list:
+                            lat = loc.get('lat')
+                            lon = loc.get('lon')
+                            
+                            if lat and lon:
+                                ulica = loc.get('street', '')
+                                miasto = loc.get('city', '')
+                                adres = f"{ulica}, {miasto}" if ulica else miasto
+                                
+                                zarobki = "Brak widełek"
+                                if pd.notna(row['salary_min']) and pd.notna(row['salary_max']):
+                                    zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}"
+                                
+                                popup_html = f"""
+                                <div style="min-width: 200px; font-family: Arial, sans-serif;">
+                                    <b style="font-size: 14px;">🏢 {row['company_name']}</b><br>
+                                    <span style="color: #0066cc; font-weight: bold;">💼 {row['title']}</span><br>
+                                    <hr style="margin: 5px 0;">
+                                    💰 <b>{zarobki}</b><br>
+                                    📍 {adres}<br>
+                                    <br>
+                                    <a href="{row['url']}" target="_blank" style="background-color: #0066cc; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; display: inline-block;">🔗 Przejdź do ogłoszenia</a>
+                                </div>
+                                """
+                                
+                                tooltip_text = f"{row['company_name']} - {row['title']}"
+                                
+                                folium.Marker(
+                                    location=[lat, lon],
+                                    popup=folium.Popup(popup_html, max_width=300),
+                                    tooltip=tooltip_text,
+                                    icon=folium.Icon(color="blue", icon="info-sign")
+                                ).add_to(marker_cluster)
+                                
+                                laczna_liczba_pinezek += 1
+                    except Exception as e:
+                        pass
+
+            # 4. Wyświetlenie mapy
+            if laczna_liczba_pinezek > 0:
+                st_folium(m, width=1000, height=600, returned_objects=[])
             else:
-                st.info("Brak precyzyjnych danych o miastach do narysowania mapy.")
+                st.info("Brak precyzyjnych danych geolokalizacyjnych do wyświetlenia na mapie.")
 
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
@@ -184,7 +230,7 @@ with tab_ai:
         with col1:
             user_kategoria = st.selectbox("Kategoria IT", ["Backend", "Frontend", "Data", "DevOps", "Testing", "Fullstack", "Mobile", "Security"])
             user_seniority = st.selectbox("Seniority", ["Junior", "Mid", "Senior"])
-            user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"]) # <--- NOWE POLE
+            user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"])
 
         with col2:
             user_location = st.selectbox("Lokalizacja", ["Warszawa", "Kraków", "Wrocław", "Gdańsk", "Poznań", "Łódź", "Katowice", "Zdalnie"])
