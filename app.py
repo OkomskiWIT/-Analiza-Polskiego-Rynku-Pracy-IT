@@ -25,7 +25,7 @@ def fetch_poland_data():
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
 # --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
-def build_interactive_map(df, max_pins=2000):
+def build_interactive_map(df, max_pins=3000):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     
