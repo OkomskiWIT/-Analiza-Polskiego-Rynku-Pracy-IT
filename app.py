@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 import folium
 from folium.plugins import MarkerCluster
-from streamlit_folium import st_folium
+import streamlit.components.v1 as components  
 
 DB_URL = st.secrets["DB_URL"]
 
@@ -22,14 +22,12 @@ def fetch_poland_data():
     engine = create_engine(DB_URL)
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
-# --- NOWOŚĆ: FUNKCJA BUDUJĄCA MAPĘ W PAMIĘCI RAM (CACHE) ---
-@st.cache_resource(ttl=3600)
+# --- ZOPTYMALIZOWANA FUNKCJA BUDUJĄCA MAPĘ ---
 def build_interactive_map(df):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     laczna_liczba_pinezek = 0
 
-    # Używamy itertuples() zamiast iterrows() - gigantyczny skok wydajności!
     for row in df.itertuples():
         coords_raw = row.coordinates
         
@@ -72,7 +70,7 @@ def build_interactive_map(df):
                         
                         laczna_liczba_pinezek += 1
             except Exception:
-                pass # Ciche ignorowanie uszkodzonych JSONów
+                pass 
                 
     return m, laczna_liczba_pinezek
 
@@ -187,18 +185,22 @@ with tab_pl:
                 st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
 
             # ==========================================
-            # ZOPTYMALIZOWANA MAPA FOLIUM
+            # BEZPIECZNA MAPA WYWOŁYWANA PRZYCISKIEM
             # ==========================================
             st.markdown("---")
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
-            with st.spinner("Inicjalizacja mapy (pobieranie koordynat)..."):
-                m, laczna_liczba_pinezek = build_interactive_map(df_pl)
+            st.info("Mapa zawiera tysiące punktów geolokalizacyjnych. Aby nie obciążać przeglądarki, kliknij poniższy przycisk, aby ją załadować.")
+            
+            if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
+                with st.spinner("Przetwarzanie tysięcy koordynatów..."):
+                    m, laczna_liczba_pinezek = build_interactive_map(df_pl)
 
-            if laczna_liczba_pinezek > 0:
-                st_folium(m, width=1000, height=600, returned_objects=[])
-            else:
-                st.info("Brak precyzyjnych danych geolokalizacyjnych do wyświetlenia na mapie.")
+                if laczna_liczba_pinezek > 0:
+                    # NOWOŚĆ: Osadzenie czystego HTMLa zamiast użycia st_folium
+                    components.html(m._repr_html_(), height=600)
+                else:
+                    st.warning("Brak precyzyjnych danych geolokalizacyjnych do wyświetlenia na mapie.")
 
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
