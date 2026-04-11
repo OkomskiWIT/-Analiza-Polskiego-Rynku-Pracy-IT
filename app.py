@@ -7,8 +7,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 import folium
 from folium.plugins import MarkerCluster
-
-# NOWOŚĆ: Używamy folium_static, które jest w 100% kompatybilne i bezpieczne dla chmury
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
 from streamlit_folium import st_folium, folium_static
 
 DB_URL = st.secrets["DB_URL"]
@@ -262,19 +262,58 @@ with tab_pl:
 
 # --- Zakładka 3: Technologie ---
 with tab_tech:
-    st.header("🔥 Top 10 Technologii w Polsce")
+    st.header("🔥 Analiza Technologii i Wymagań na Rynku")
+    st.markdown("Wizualizacja najczęściej wymaganych kompetencji przez pracodawców IT w Polsce.")
+    
     try:
         df_tech = fetch_poland_data()
         
         if 'technologie' in df_tech.columns:
+            # 1. Czyszczenie i przygotowanie danych
             tech_series = df_tech['technologie'].dropna().astype(str).str.split(',').explode()
             tech_series = tech_series.str.strip().str.upper()
             tech_series = tech_series[(tech_series != '') & (tech_series != 'NAN') & (tech_series != 'NONE')]
             
-            top_10_tech = tech_series.value_counts().head(10)
-            st.bar_chart(top_10_tech)
+            # Zliczamy wystąpienia każdej technologii
+            tech_counts = tech_series.value_counts()
+            
+            if not tech_counts.empty:
+                col1, col2 = st.columns([2, 1]) 
+                
+                with col1:
+                    st.subheader("☁️ Chmura pożądanych technologii")
+                    with st.spinner("Generowanie grafiki wektorowej..."):
+                        # Generowanie chmury słów na podstawie częstotliwości
+                        wordcloud = WordCloud(
+                            width=800, 
+                            height=500, 
+                            background_color='white', 
+                            colormap='viridis', # paleta barw
+                            max_words=100,
+                            border_color='black'
+                        ).generate_from_frequencies(tech_counts)
+                        
+                        # Renderowanie na ekranie używając biblioteki matplotlib
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.imshow(wordcloud, interpolation='bilinear')
+                        ax.axis('off') # Ukrywamy osie X i Y
+                        st.pyplot(fig)
+                        
+                with col2:
+                    st.subheader("📊 Top 15 Stacku")
+                    df_top = tech_counts.head(15).reset_index()
+                    df_top.columns = ['Technologia', 'Liczba ofert']
+                    st.dataframe(df_top, hide_index=True, use_container_width=True)
+                    
+                # 3. Zostawiamy wykres słupkowy
+                st.markdown("---")
+                st.subheader("📈 Wykres słupkowy (Top 10)")
+                st.bar_chart(tech_counts.head(10))
+            else:
+                st.info("Brak danych po oczyszczeniu kolumny technologii.")
         else:
             st.warning("Brak kolumny 'technologie' w bazie.")
+            
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
