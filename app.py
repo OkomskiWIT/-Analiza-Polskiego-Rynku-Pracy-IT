@@ -23,6 +23,7 @@ def fetch_poland_data():
     return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
 
 # --- ZOPTYMALIZOWANA FUNKCJA BUDUJĄCA MAPĘ ---
+# --- ZOPTYMALIZOWANA FUNKCJA BUDUJĄCA MAPĘ (BEZ CACHE) ---
 def build_interactive_map(df):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
@@ -31,9 +32,17 @@ def build_interactive_map(df):
     for row in df.itertuples():
         coords_raw = row.coordinates
         
-        if pd.notna(coords_raw) and coords_raw != '[]':
+        if pd.notna(coords_raw):
             try:
-                coords_list = json.loads(coords_raw)
+                if isinstance(coords_raw, str):
+                    if coords_raw.strip() == '[]':
+                        continue
+                    coords_list = json.loads(coords_raw)
+                elif isinstance(coords_raw, list):
+                    coords_list = coords_raw
+                else:
+                    continue
+                    
                 for loc in coords_list:
                     lat = loc.get('lat')
                     lon = loc.get('lon')
@@ -69,7 +78,7 @@ def build_interactive_map(df):
                         ).add_to(marker_cluster)
                         
                         laczna_liczba_pinezek += 1
-            except Exception:
+            except Exception as e:
                 pass 
                 
     return m, laczna_liczba_pinezek
@@ -191,13 +200,6 @@ with tab_pl:
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy (Precyzyjna)")
 
             st.info("Mapa zawiera tysiące punktów geolokalizacyjnych. Aby nie obciążać przeglądarki, kliknij poniższy przycisk, aby ją załadować.")
-            # --- DEBUGGING (DO USUNIĘCIA PÓŹNIEJ) ---
-            st.warning("🔍 X-RAY Bazy Danych:")
-            st.write("Czy kolumna coordinates w ogóle istnieje?", 'coordinates' in df_pl.columns)
-            if 'coordinates' in df_pl.columns:
-                st.write("Próbka z 5 pierwszych wierszy:")
-                st.dataframe(df_pl[['company_name', 'coordinates']].head(5))
-            # ----------------------------------------
             if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
                 with st.spinner("Przetwarzanie tysięcy koordynatów..."):
                     m, laczna_liczba_pinezek = build_interactive_map(df_pl)
