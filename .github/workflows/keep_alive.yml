@@ -2,12 +2,12 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    - cron: '0 5 * * *'
-  workflow_dispatch:
+    - cron: '0 0,6,12,18 * * *'
+  workflow_dispatch: 
 
 jobs:
-  ping:
+  ping_app:
     runs-on: ubuntu-latest
     steps:
-      - name: Odwiedzenie strony (Ping)
+      - name: Odwiedzenie i pełne wybudzenie strony (Ping)
         run: curl -sL https://kamil-rynek-it.streamlit.app > /dev/null || true
