@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Odwiedzenie i pełne wybudzenie strony (Ping)
-        run: curl -sL https://kamil-rynek-it.streamlit.app > /dev/null || true
+        run: curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" https://kamil-rynek-it.streamlit.app > /dev/null || true
