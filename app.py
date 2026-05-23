@@ -22,10 +22,49 @@ def fetch_global_data():
 @st.cache_data(ttl=3600)
 def fetch_poland_data():
     engine = create_engine(DB_URL)
-    return pd.read_sql("SELECT * FROM poland_job_offers;", engine)
+    df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
+    
+    if not df.empty:
+        df['salary_avg'] = (df['salary_min'] + df['salary_max']) / 2
+        
+        if 'remote' in df.columns:
+            df['remote'] = df['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
+            
+        if 'location' in df.columns:
+            df['location'] = df['location'].astype(str).str.lstrip(', ').str.replace(r',\s*(,)+', ',', regex=True)
+            
+        if 'date_added' in df.columns:
+            df = df.sort_values(by='date_added', ascending=False)
+            
+    return df.reset_index(drop=True)
+
+@st.cache_data(ttl=3600)
+def get_tech_counts(df):
+    if 'technologie' not in df.columns:
+        return pd.Series(dtype=int)
+        
+    tech_series = df['technologie'].dropna().astype(str).str.split(',').explode()
+    tech_series = tech_series.str.strip().str.upper()
+    tech_series = tech_series[(tech_series != '') & (tech_series != 'NAN') & (tech_series != 'NONE')]
+    
+    return tech_series.value_counts()
+
+@st.cache_data(ttl=3600)
+def prepare_nlp_matrix(df):
+    df_clean = df.copy()
+    df_clean['technologie'] = df_clean['technologie'].fillna('')
+    df_clean['title'] = df_clean['title'].fillna('')
+    df_clean['kategoria'] = df_clean['kategoria'].fillna('')
+    
+    df_clean['tekst_do_analizy'] = df_clean['kategoria'] + " " + df_clean['title'] + " " + df_clean['technologie']
+    corpus = df_clean['tekst_do_analizy'].tolist()
+    
+    vectorizer = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = vectorizer.fit_transform(corpus)
+    return vectorizer, tfidf_matrix, df_clean
 
 # --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
-def build_interactive_map(df, max_pins=2500):
+def build_interactive_map(df, max_pins=2000):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
     
@@ -59,6 +98,9 @@ def build_interactive_map(df, max_pins=2500):
                 
                 if lat and lon:
                     lat, lon = float(lat), float(lon)
+                    
+                    if not (49.0 <= lat <= 55.0 and 14.0 <= lon <= 25.0):
+                        continue
                     
                     # Tworzymy unikalny klucz matematyczny dla tego biura
                     coord_key = (lat, lon)
@@ -177,15 +219,6 @@ with tab_pl:
         df_pl = fetch_poland_data()
         
         if not df_pl.empty:
-            df_pl['salary_avg'] = (df_pl['salary_min'] + df_pl['salary_max']) / 2
-            df_pl = df_pl.reset_index(drop=True)
-            
-            if 'remote' in df_pl.columns:
-                df_pl['remote'] = df_pl['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
-                
-            if 'location' in df_pl.columns:
-                df_pl['location'] = df_pl['location'].astype(str).str.lstrip(', ').str.replace(r',\s*(,)+', ',', regex=True)
-
             st.metric("Liczba dostepnych ofert (PL)", len(df_pl))
             
             column_config_pl = {
@@ -207,9 +240,6 @@ with tab_pl:
                 'remote', 'contract_type', 'salary_min', 'salary_max', 'currency', 'url'
             ]
             existing_cols_pl = [col for col in display_columns_pl if col in df_pl.columns]
-
-            if 'date_added' in existing_cols_pl:
-                df_pl = df_pl.sort_values(by='date_added', ascending=False)
 
             st.dataframe(
                 df_pl[existing_cols_pl], 
@@ -267,51 +297,38 @@ with tab_tech:
     
     try:
         df_tech = fetch_poland_data()
+        tech_counts = get_tech_counts(df_tech)
         
-        if 'technologie' in df_tech.columns:
-            # 1. Czyszczenie i przygotowanie danych
-            tech_series = df_tech['technologie'].dropna().astype(str).str.split(',').explode()
-            tech_series = tech_series.str.strip().str.upper()
-            tech_series = tech_series[(tech_series != '') & (tech_series != 'NAN') & (tech_series != 'NONE')]
+        if not tech_counts.empty:
+            col1, col2 = st.columns([2, 1]) 
             
-            # Zliczamy wystąpienia każdej technologii
-            tech_counts = tech_series.value_counts()
-            
-            if not tech_counts.empty:
-                col1, col2 = st.columns([2, 1]) 
-                
-                with col1:
-                    st.subheader("☁️ Chmura pożądanych technologii")
-                    with st.spinner("Generowanie grafiki wektorowej..."):
-                        # Generowanie chmury słów na podstawie częstotliwości
-                        wordcloud = WordCloud(
-                            width=800, 
-                            height=500, 
-                            background_color='white', 
-                            colormap='viridis', # paleta barw
-                            max_words=100,
-                        ).generate_from_frequencies(tech_counts)
-                        
-                        # Renderowanie na ekranie używając biblioteki matplotlib
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        ax.imshow(wordcloud, interpolation='bilinear')
-                        ax.axis('off') # Ukrywamy osie X i Y
-                        st.pyplot(fig)
-                        
-                with col2:
-                    st.subheader("📊 Top 15 Stacku")
-                    df_top = tech_counts.head(15).reset_index()
-                    df_top.columns = ['Technologia', 'Liczba ofert']
-                    st.dataframe(df_top, hide_index=True, use_container_width=True)
+            with col1:
+                st.subheader("☁️ Chmura pożądanych technologii")
+                with st.spinner("Generowanie grafiki wektorowej..."):
+                    wordcloud = WordCloud(
+                        width=800, 
+                        height=500, 
+                        background_color='white', 
+                        colormap='viridis',
+                        max_words=100,
+                    ).generate_from_frequencies(tech_counts)
                     
-                # 3. Zostawiamy wykres słupkowy
-                st.markdown("---")
-                st.subheader("📈 Wykres słupkowy (Top 10)")
-                st.bar_chart(tech_counts.head(10))
-            else:
-                st.info("Brak danych po oczyszczeniu kolumny technologii.")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.imshow(wordcloud, interpolation='bilinear')
+                    ax.axis('off')
+                    st.pyplot(fig)
+                    
+            with col2:
+                st.subheader("📊 Top 15 Stacku")
+                df_top = tech_counts.head(15).reset_index()
+                df_top.columns = ['Technologia', 'Liczba ofert']
+                st.dataframe(df_top, hide_index=True, use_container_width=True)
+                
+            st.markdown("---")
+            st.subheader("📈 Wykres słupkowy (Top 10)")
+            st.bar_chart(tech_counts.head(10))
         else:
-            st.warning("Brak kolumny 'technologie' w bazie.")
+            st.warning("Brak danych po oczyszczeniu kolumny technologii.")
             
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
@@ -424,9 +441,11 @@ with tab_nlp:
     st.markdown("Algorytm przeanalizuje Twoje umiejętności i matematycznie dopasuje je do bazy ofert.")
     
     try:
-        df_nlp = fetch_poland_data()
+        df_nlp_raw = fetch_poland_data()
         
-        if not df_nlp.empty:
+        if not df_nlp_raw.empty:
+            vectorizer, tfidf_matrix, df_nlp = prepare_nlp_matrix(df_nlp_raw)
+            
             user_skills = st.text_area(
                 "Wpisz swoje technologie i doświadczenie (np. 'Python, SQL, AWS, Docker, 3 lata doświadczenia w budowaniu rurociągów danych'):",
                 height=100
@@ -436,16 +455,7 @@ with tab_nlp:
                 if len(user_skills) < 5:
                     st.warning("Wpisz więcej informacji, aby algorytm miał na czym pracować!")
                 else:
-                    with st.spinner('Wektoryzacja danych i obliczanie macierzy podobieństwa...'):
-                        df_nlp['technologie'] = df_nlp['technologie'].fillna('')
-                        df_nlp['title'] = df_nlp['title'].fillna('')
-                        df_nlp['kategoria'] = df_nlp['kategoria'].fillna('')
-                        
-                        df_nlp['tekst_do_analizy'] = df_nlp['kategoria'] + " " + df_nlp['title'] + " " + df_nlp['technologie']
-                        corpus = df_nlp['tekst_do_analizy'].tolist()
-                        
-                        vectorizer = TfidfVectorizer(stop_words='english')
-                        tfidf_matrix = vectorizer.fit_transform(corpus)
+                    with st.spinner('Obliczanie macierzy podobieństwa...'):
                         user_tfidf = vectorizer.transform([user_skills])
                         cosine_similarities = cosine_similarity(user_tfidf, tfidf_matrix).flatten()
                         top_5_indices = cosine_similarities.argsort()[-5:][::-1]
