@@ -16,11 +16,26 @@ BUCKET_NAME = 'raw-data'
 
 def assign_category(title_str):
     text = str(title_str).lower()
+    
+    # Bardziej specyficzne kategorie na górze (kaskada)
+    if any(kw in text for kw in ['fullstack', 'full stack', 'full-stack', 'mern', 'mean']): return 'Fullstack'
+    if any(kw in text for kw in ['architect', 'architekt', 'togaf']): return 'Architecture'
+    if any(kw in text for kw in ['product manager', 'project manager', 'scrum', 'agile', 'product owner', 'pmo', 'delivery manager']): return 'Project & Product Management'
+    if any(kw in text for kw in ['business analyst', 'system analyst', 'analityk', 'bpmn', 'uml']): return 'Business / System Analysis'
+    if any(kw in text for kw in ['security', 'cyber', 'pentester', 'siem', 'ciso', 'cissp', 'bezpieczeństwo', 'bezpieczenstwo']): return 'Cybersecurity'
+    if any(kw in text for kw in [' ux ', ' ui ', 'ux/ui', 'ui/ux', 'figma', 'user experience', 'user interface', 'product designer', 'wireframing']): return 'UX/UI Design'
+    if any(kw in text for kw in ['sap', 'salesforce', 'dynamics', 'abap', 'erp', 'crm', 'wdrażeniowiec']): return 'ERP / CRM'
+    if any(kw in text for kw in ['ios', 'android', 'flutter', 'react native', 'swift', 'kotlin', 'mobile']): return 'Mobile'
+    if any(kw in text for kw in ['gamedev', 'unity', 'unreal engine', 'gameplay', 'game designer', 'godot']): return 'Game Development'
+    if any(kw in text for kw in ['admin', 'helpdesk', 'sysadmin', 'support', 'active directory', 'network']): return 'IT Support & Administration'
+    
+    # Klasyczne, ogólne kategorie na dole
     if any(kw in text for kw in ['data', 'sql', 'machine learning', 'ai', 'pandas', 'analyst']): return 'Data & AI'
     if any(kw in text for kw in ['react', 'angular', 'vue', 'frontend', 'javascript']): return 'Frontend'
     if any(kw in text for kw in ['python', 'django', 'java', 'spring', 'node', 'backend', 'c#', 'php', '.net']): return 'Backend'
     if any(kw in text for kw in ['aws', 'azure', 'docker', 'devops', 'cloud']): return 'DevOps & Cloud'
     if any(kw in text for kw in ['tester', 'qa', 'test']): return 'Testing'
+    
     return 'Inne'
 
 def transform_poland():
