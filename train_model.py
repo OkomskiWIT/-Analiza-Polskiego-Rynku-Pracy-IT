@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
-from xgboost import XGBRegressor  # <--- Zmiana silnika na XGBoost
+from xgboost import XGBRegressor
 import joblib
 import warnings
 
@@ -54,15 +54,27 @@ df['contract_type'] = df['contract_type'].fillna('Inna')
 # 3. EKSTRAKCJA TECHNOLOGII
 print("Analiza stacku technologicznego...")
 df['technologie'] = df['technologie'].fillna('').str.lower()
-df['tech_python'] = df['technologie'].str.contains('python').astype(int)
-df['tech_java'] = df['technologie'].str.contains('java|spring').astype(int)
-df['tech_data_sql'] = df['technologie'].str.contains('sql|data|bi|pandas|spark|machine learning').astype(int)
-df['tech_cloud'] = df['technologie'].str.contains('aws|cloud|azure|gcp|docker|kubernetes').astype(int)
-df['tech_frontend'] = df['technologie'].str.contains('react|angular|vue|javascript|typescript').astype(int)
 
-# 4. PRZYGOTOWANIE DO TRENINGU
+# Stara gwardia
+df['tech_python'] = df['technologie'].str.contains(r'python|django|flask|fastapi').astype(int)
+df['tech_java'] = df['technologie'].str.contains(r'java|spring|hibernate').astype(int)
+df['tech_data_sql'] = df['technologie'].str.contains(r'sql|data|bi|pandas|spark|machine learning|ai').astype(int)
+df['tech_cloud'] = df['technologie'].str.contains(r'aws|cloud|azure|gcp|docker|kubernetes|terraform').astype(int)
+df['tech_frontend'] = df['technologie'].str.contains(r'react|angular|vue|javascript|typescript').astype(int)
+
+# NOWOŚĆ: Technologie dla nowych kategorii
+df['tech_csharp_net'] = df['technologie'].str.contains(r'c#|\.net').astype(int)
+df['tech_cpp_gamedev'] = df['technologie'].str.contains(r'c\+\+|unity|unreal|gameplay').astype(int)
+df['tech_mobile'] = df['technologie'].str.contains(r'swift|kotlin|flutter|android|ios|react native').astype(int)
+df['tech_php_ruby'] = df['technologie'].str.contains(r'php|laravel|symfony|ruby|rails').astype(int)
+df['tech_testing_qa'] = df['technologie'].str.contains(r'selenium|cypress|qa|testing|postman|jira').astype(int)
+df['tech_erp_crm'] = df['technologie'].str.contains(r'sap|salesforce|abap|dynamics').astype(int)
+
+# 4. PRZYGOTOWANIE DO TRENINGU (Dodane nowe wymiary)
 features = df[['kategoria', 'location', 'seniority', 'remote', 'contract_type', 
-               'tech_python', 'tech_java', 'tech_data_sql', 'tech_cloud', 'tech_frontend']] 
+               'tech_python', 'tech_java', 'tech_data_sql', 'tech_cloud', 'tech_frontend',
+               'tech_csharp_net', 'tech_cpp_gamedev', 'tech_mobile', 'tech_php_ruby', 
+               'tech_testing_qa', 'tech_erp_crm']] 
 
 print(f"Liczba ofert gotowych do nauki: {len(df)}")
 
