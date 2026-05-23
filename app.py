@@ -13,7 +13,6 @@ from streamlit_folium import st_folium, folium_static
 
 DB_URL = st.secrets["DB_URL"]
 
-# --- ZOPTYMALIZOWANE FUNKCJE CACHE ---
 @st.cache_data(ttl=3600)
 def fetch_global_data():
     engine = create_engine(DB_URL)
@@ -68,7 +67,6 @@ def prepare_nlp_matrix(df):
     tfidf_matrix = vectorizer.fit_transform(corpus)
     return vectorizer, tfidf_matrix, df_clean
 
-# Nowość: Cache dla modelu z dysku
 @st.cache_resource
 def load_ml_model():
     try:
@@ -162,11 +160,9 @@ def build_interactive_map(df, max_pins=2000):
             
     return m, laczna_liczba_wczytanych_ofert, []
 
-# --- KONFIGURACJA APLIKACJI I JEDNORAZOWE ŁADOWANIE ---
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
 
-# Pobieramy to wszystko tylko RAZ przed wejściem w zakładki
 with st.spinner("Ładowanie danych z bazy..."):
     df_global_main = fetch_global_data()
     df_pl_main = fetch_poland_data()
@@ -180,7 +176,6 @@ tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
-# --- Zakładka 1: Rynek Globalny ---
 with tab_global:
     st.header("Oferty Globalne")
     try:
@@ -206,7 +201,6 @@ with tab_global:
     except Exception as e:
         st.error(f"Błąd ładowania danych globalnych: {e}")
 
-# --- Zakładka 2: Rynek Polski ---
 with tab_pl:
     st.header("Zarobki i Analiza (Polska)")
     try:
@@ -271,7 +265,6 @@ with tab_pl:
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
 
-# --- Zakładka 3: Technologie ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
     try:
@@ -303,7 +296,6 @@ with tab_tech:
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
-# --- Zakładka 4: Estymator ML ---
 with tab_ai:
     st.header("🤖 Estymator Wynagrodzeń ML")
     st.markdown("---")
@@ -312,7 +304,12 @@ with tab_ai:
         if ml_model is not None and ml_columns is not None:
             col1, col2, col3 = st.columns(3)
             with col1:
-                user_kategoria = st.selectbox("Kategoria IT", ["Backend", "Frontend", "Data", "DevOps", "Testing", "Fullstack", "Mobile", "Security"])
+                user_kategoria = st.selectbox("Kategoria IT", [
+                    "Backend", "Frontend", "Fullstack", "Data & AI", "DevOps & Cloud", 
+                    "Testing", "Architecture", "Project & Product Management", 
+                    "Business / System Analysis", "Cybersecurity", "UX/UI Design", 
+                    "ERP / CRM", "Mobile", "Game Development", "IT Support & Administration", "Inne"
+                ])
                 user_seniority = st.selectbox("Seniority", ["Junior", "Mid", "Senior"])
                 user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"])
             with col2:
@@ -370,7 +367,6 @@ with tab_ai:
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
         
-# --- Zakładka 5: System Rekomendacji NLP ---
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
