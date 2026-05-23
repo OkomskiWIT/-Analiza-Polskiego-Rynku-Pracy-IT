@@ -13,11 +13,17 @@ from streamlit_folium import st_folium, folium_static
 
 DB_URL = st.secrets["DB_URL"]
 
-# --- FUNKCJE POBIERAJĄCE DANE ---
+# --- ZOPTYMALIZOWANE FUNKCJE CACHE ---
 @st.cache_data(ttl=3600)
 def fetch_global_data():
     engine = create_engine(DB_URL)
-    return pd.read_sql("SELECT * FROM job_offers;", engine)
+    df = pd.read_sql("SELECT * FROM job_offers;", engine)
+    df = df.reset_index(drop=True)
+    if 'Lp.' not in df.columns:
+        df.insert(0, 'Lp.', range(1, len(df) + 1))
+    if 'remote' in df.columns:
+        df['remote'] = df['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
+    return df
 
 @st.cache_data(ttl=3600)
 def fetch_poland_data():
@@ -46,7 +52,6 @@ def get_tech_counts(df):
     tech_series = df['technologie'].dropna().astype(str).str.split(',').explode()
     tech_series = tech_series.str.strip().str.upper()
     tech_series = tech_series[(tech_series != '') & (tech_series != 'NAN') & (tech_series != 'NONE')]
-    
     return tech_series.value_counts()
 
 @st.cache_data(ttl=3600)
@@ -63,19 +68,25 @@ def prepare_nlp_matrix(df):
     tfidf_matrix = vectorizer.fit_transform(corpus)
     return vectorizer, tfidf_matrix, df_clean
 
-# --- ZOPTYMALIZOWANA I BEZPIECZNA FUNKCJA BUDUJĄCA MAPĘ ---
+# Nowość: Cache dla modelu z dysku
+@st.cache_resource
+def load_ml_model():
+    try:
+        model = joblib.load('salary_model.pkl')
+        model_columns = joblib.load('model_columns.pkl')
+        return model, model_columns
+    except Exception:
+        return None, None
+
 def build_interactive_map(df, max_pins=2000):
     m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
     marker_cluster = MarkerCluster().add_to(m)
-    
     grouped_offers = {}
     laczna_liczba_wczytanych_ofert = 0
 
-    # KROK 1: Zbieranie i grupowanie danych z wierszy
     for row in df.itertuples():
         if laczna_liczba_wczytanych_ofert >= max_pins:
             break 
-
         coords_raw = getattr(row, 'coordinates', None)
         if coords_raw is None or (isinstance(coords_raw, float) and pd.isna(coords_raw)):
             continue
@@ -92,19 +103,15 @@ def build_interactive_map(df, max_pins=2000):
                 
             for loc in coords_list:
                 if laczna_liczba_wczytanych_ofert >= max_pins: break
-
                 lat = loc.get('lat')
                 lon = loc.get('lon')
                 
                 if lat and lon:
                     lat, lon = float(lat), float(lon)
-                    
                     if not (49.0 <= lat <= 55.0 and 14.0 <= lon <= 25.0):
                         continue
                     
-                    # Tworzymy unikalny klucz matematyczny dla tego biura
                     coord_key = (lat, lon)
-                    
                     ulica = loc.get('street', '')
                     miasto = loc.get('city', '')
                     adres = f"{ulica}, {miasto}" if ulica else miasto
@@ -113,33 +120,25 @@ def build_interactive_map(df, max_pins=2000):
                     if pd.notna(getattr(row, 'salary_min', None)) and pd.notna(getattr(row, 'salary_max', None)):
                         zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
                     
-                    # Jeśli ten punkt na mapie jeszcze nie istnieje, tworzymy go
                     if coord_key not in grouped_offers:
                         grouped_offers[coord_key] = {
                             'adres': adres,
-                            'firmy': set(), # Używamy zbioru (set), żeby firmy się nie powtarzały
+                            'firmy': set(),
                             'oferty_html': []
                         }
                     
-                    # Dodajemy ofertę do "pudełka" dla tego biurowca
                     grouped_offers[coord_key]['firmy'].add(row.company_name)
                     offer_html = f"<li style='margin-bottom: 5px;'><b>{row.title}</b><br>💰 {zarobki} | <a href='{row.url}' target='_blank'>Aplikuj</a></li>"
                     grouped_offers[coord_key]['oferty_html'].append(offer_html)
-                    
                     laczna_liczba_wczytanych_ofert += 1
-                    
-        except Exception as e:
-            pass # Ciche ignorowanie błędów pojedynczych JSONów
+        except Exception:
+            pass
 
-    # KROK 2: Rysowanie JEDNEJ pinezki na każdą grupę (biuro)
     for (lat, lon), data in grouped_offers.items():
         nazwy_firm = ", ".join(list(data['firmy']))
         liczba_ofert = len(data['oferty_html'])
-        
-        # Łączymy wszystkie oferty w jedną listę HTML
         lista_ofert_html = "".join(data['oferty_html'])
         
-        # Scrollowany dymek (max-height: 200px; overflow-y: auto;)
         popup_html = f"""
         <div style="min-width: 250px; font-family: Arial, sans-serif;">
             <b style="font-size: 14px; color: #0066cc;">🏢 {nazwy_firm}</b><br>
@@ -153,9 +152,7 @@ def build_interactive_map(df, max_pins=2000):
             </div>
         </div>
         """
-        
         tooltip_text = f"{nazwy_firm} ({liczba_ofert} ofert)"
-        
         folium.Marker(
             location=[lat, lon],
             popup=folium.Popup(popup_html, max_width=350),
@@ -165,9 +162,15 @@ def build_interactive_map(df, max_pins=2000):
             
     return m, laczna_liczba_wczytanych_ofert, []
 
-# --- KONFIGURACJA APLIKACJI ---
+# --- KONFIGURACJA APLIKACJI I JEDNORAZOWE ŁADOWANIE ---
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
+
+# Pobieramy to wszystko tylko RAZ przed wejściem w zakładki
+with st.spinner("Ładowanie danych z bazy..."):
+    df_global_main = fetch_global_data()
+    df_pl_main = fetch_poland_data()
+    ml_model, ml_columns = load_ml_model()
 
 tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "Rynek Polski & Zarobki", 
@@ -181,14 +184,8 @@ tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
 with tab_global:
     st.header("Oferty Globalne")
     try:
-        df_global = fetch_global_data()
-        df_global = df_global.reset_index(drop=True)
-        
-        if 'Lp.' not in df_global.columns:
-            df_global.insert(0, 'Lp.', range(1, len(df_global) + 1))
-            
-        if 'remote' in df_global.columns:
-            df_global['remote'] = df_global['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
+        display_columns = ['Lp.', 'title', 'company_name', 'location', 'remote', 'url']
+        existing_cols = [col for col in display_columns if col in df_global_main.columns]
 
         column_config = {
             "Lp.": st.column_config.NumberColumn("Lp.", width=50),
@@ -199,12 +196,9 @@ with tab_global:
             "url": st.column_config.LinkColumn("Aplikuj", display_text="Otworz", width=70)
         }
 
-        display_columns = ['Lp.', 'title', 'company_name', 'location', 'remote', 'url']
-        existing_cols = [col for col in display_columns if col in df_global.columns]
-
-        st.metric("Liczba ofert", len(df_global))
+        st.metric("Liczba ofert", len(df_global_main))
         st.dataframe(
-            df_global[existing_cols], 
+            df_global_main[existing_cols], 
             column_config=column_config, 
             hide_index=True, 
             use_container_width=True
@@ -216,10 +210,8 @@ with tab_global:
 with tab_pl:
     st.header("Zarobki i Analiza (Polska)")
     try:
-        df_pl = fetch_poland_data()
-        
-        if not df_pl.empty:
-            st.metric("Liczba dostepnych ofert (PL)", len(df_pl))
+        if not df_pl_main.empty:
+            st.metric("Liczba dostepnych ofert (PL)", len(df_pl_main))
             
             column_config_pl = {
                 "date_added": st.column_config.DateColumn("Data", format="YYYY-MM-DD", width="small"),
@@ -239,10 +231,10 @@ with tab_pl:
                 'date_added', 'kategoria', 'title', 'company_name', 'location', 
                 'remote', 'contract_type', 'salary_min', 'salary_max', 'currency', 'url'
             ]
-            existing_cols_pl = [col for col in display_columns_pl if col in df_pl.columns]
+            existing_cols_pl = [col for col in display_columns_pl if col in df_pl_main.columns]
 
             st.dataframe(
-                df_pl[existing_cols_pl], 
+                df_pl_main[existing_cols_pl], 
                 column_config=column_config_pl, 
                 hide_index=True, 
                 use_container_width=True
@@ -250,74 +242,53 @@ with tab_pl:
             
             st.markdown("---")
             st.subheader("📊 Analiza Kategorii")
-            
             col1, col2 = st.columns(2)
             with col1:
                 st.write("**Liczba ofert w danej kategorii**")
-                oferty_kategorie = df_pl['kategoria'].value_counts().reset_index()
+                oferty_kategorie = df_pl_main['kategoria'].value_counts().reset_index()
                 oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
                 st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
-                
             with col2:
                 st.write("**Średnia pensja w kategorii (PLN)**")
-                srednia_kategorie = df_pl.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
+                srednia_kategorie = df_pl_main.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
                 st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
 
-            # ==========================================
-            # MAPA Z SYSTEMEM LOGOWANIA
-            # ==========================================
             st.markdown("---")
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
-
             if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
                 with st.spinner("Przetwarzanie tysięcy koordynatów..."):
-                    m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl)
+                    m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl_main)
 
-                # DIAGNOSTYKA NA ŻYWO NA EKRANIE
                 if laczna_liczba_pinezek > 0:
-                    st.success(f"Sukces! Załadowano próbkę {laczna_liczba_pinezek} ofert na mapę, by zachować płynność działania przeglądarki.")
-                    
+                    st.success(f"Sukces! Załadowano próbkę {laczna_liczba_pinezek} ofert na mapę.")
                     import streamlit.components.v1 as components
                     m.save("temp_map.html") 
-                    
                     with open("temp_map.html", "r", encoding="utf-8") as f:
                         html_data = f.read() 
-                        
                     components.html(html_data, height=650)
                 else:
                     st.error("Krytyczny błąd: Wygenerowano 0 pinezek.")
-
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
 
 # --- Zakładka 3: Technologie ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
-    st.markdown("Wizualizacja najczęściej wymaganych kompetencji przez pracodawców IT w Polsce.")
-    
     try:
-        df_tech = fetch_poland_data()
-        tech_counts = get_tech_counts(df_tech)
-        
+        tech_counts = get_tech_counts(df_pl_main)
         if not tech_counts.empty:
             col1, col2 = st.columns([2, 1]) 
-            
             with col1:
                 st.subheader("☁️ Chmura pożądanych technologii")
                 with st.spinner("Generowanie grafiki wektorowej..."):
                     wordcloud = WordCloud(
-                        width=800, 
-                        height=500, 
-                        background_color='white', 
-                        colormap='viridis',
-                        max_words=100,
+                        width=800, height=500, background_color='white', 
+                        colormap='viridis', max_words=100
                     ).generate_from_frequencies(tech_counts)
-                    
                     fig, ax = plt.subplots(figsize=(10, 6))
                     ax.imshow(wordcloud, interpolation='bilinear')
                     ax.axis('off')
                     st.pyplot(fig)
-                    
             with col2:
                 st.subheader("📊 Top 15 Stacku")
                 df_top = tech_counts.head(15).reset_index()
@@ -329,7 +300,6 @@ with tab_tech:
             st.bar_chart(tech_counts.head(10))
         else:
             st.warning("Brak danych po oczyszczeniu kolumny technologii.")
-            
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
@@ -339,118 +309,78 @@ with tab_ai:
     st.markdown("---")
     
     try:
-        model = joblib.load('salary_model.pkl')
-        model_columns = joblib.load('model_columns.pkl')
+        if ml_model is not None and ml_columns is not None:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                user_kategoria = st.selectbox("Kategoria IT", ["Backend", "Frontend", "Data", "DevOps", "Testing", "Fullstack", "Mobile", "Security"])
+                user_seniority = st.selectbox("Seniority", ["Junior", "Mid", "Senior"])
+                user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"])
+            with col2:
+                user_location = st.selectbox("Lokalizacja", ["Warszawa", "Kraków", "Wrocław", "Gdańsk", "Poznań", "Łódź", "Katowice", "Zdalnie"])
+                user_remote = st.selectbox("Praca w pełni zdalna", ["True", "False"])
+            with col3:
+                st.write("Stack:")
+                user_python = st.checkbox("Python")
+                user_java = st.checkbox("Java / Spring")
+                user_data = st.checkbox("SQL / Data / BI")
+                user_cloud = st.checkbox("AWS / Docker / Cloud")
+                user_frontend = st.checkbox("React / Angular / Vue")
 
-        col1, col2, col3 = st.columns(3)
+            if st.button("Oblicz estymację", type="primary"):
+                input_data = pd.DataFrame({
+                    'kategoria': [user_kategoria], 'location': [user_location], 'seniority': [user_seniority],
+                    'remote': [user_remote], 'contract_type': [user_contract], 'tech_python': [1 if user_python else 0],
+                    'tech_java': [1 if user_java else 0], 'tech_data_sql': [1 if user_data else 0],
+                    'tech_cloud': [1 if user_cloud else 0], 'tech_frontend': [1 if user_frontend else 0]
+                })
 
-        with col1:
-            user_kategoria = st.selectbox("Kategoria IT", ["Backend", "Frontend", "Data", "DevOps", "Testing", "Fullstack", "Mobile", "Security"])
-            user_seniority = st.selectbox("Seniority", ["Junior", "Mid", "Senior"])
-            user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"])
+                input_encoded = pd.get_dummies(input_data)
+                input_encoded = input_encoded.reindex(columns=ml_columns, fill_value=0)
+                prediction = ml_model.predict(input_encoded)[0]
 
-        with col2:
-            user_location = st.selectbox("Lokalizacja", ["Warszawa", "Kraków", "Wrocław", "Gdańsk", "Poznań", "Łódź", "Katowice", "Zdalnie"])
-            user_remote = st.selectbox("Praca w pełni zdalna", ["True", "False"])
+                st.success(f"Estymowane widełki: **{prediction:,.0f} PLN**")
+                st.caption(f"MAE modelu XGBoost: ~4723 PLN.")
 
-        with col3:
-            st.write("Stack:")
-            user_python = st.checkbox("Python")
-            user_java = st.checkbox("Java / Spring")
-            user_data = st.checkbox("SQL / Data / BI")
-            user_cloud = st.checkbox("AWS / Docker / Cloud")
-            user_frontend = st.checkbox("React / Angular / Vue")
-
-        if st.button("Oblicz estymację", type="primary"):
-            input_data = pd.DataFrame({
-                'kategoria': [user_kategoria],
-                'location': [user_location],
-                'seniority': [user_seniority],
-                'remote': [user_remote],
-                'contract_type': [user_contract], 
-                'tech_python': [1 if user_python else 0],
-                'tech_java': [1 if user_java else 0],
-                'tech_data_sql': [1 if user_data else 0],
-                'tech_cloud': [1 if user_cloud else 0],
-                'tech_frontend': [1 if user_frontend else 0]
-            })
-
-            input_encoded = pd.get_dummies(input_data)
-            input_encoded = input_encoded.reindex(columns=model_columns, fill_value=0)
-
-            prediction = model.predict(input_encoded)[0]
-
-            st.success(f"Estymowane widełki: **{prediction:,.0f} PLN**")
-            st.caption(f"MAE modelu XGBoost: ~4723 PLN.")
-
-        # ==========================================
-        # NOWOŚĆ: EXPLAINABLE AI (XAI)
-        # ==========================================
-        st.markdown("---")
-        st.subheader("🧠 Wyjaśnialne AI (Co wpływa na pensję?)")
-        st.markdown("Poniższy wykres otwiera *czarną skrzynkę* algorytmu ML. Pokazuje matematyczną wagę (Feature Importance) poszczególnych cech, czyli na co sztuczna inteligencja zwraca największą uwagę wyceniając pracownika.")
-        
-        if hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-            
-            df_importance = pd.DataFrame({
-                'Cecha': model_columns,
-                'Waga (%)': importances * 100 
-            })
-            
-            df_importance = df_importance.sort_values(by='Waga (%)', ascending=False).head(10)
-            
-            def format_label(col_name):
-                translations = {
-                    'seniority_': 'Poziom: ',
-                    'kategoria_': 'Kategoria: ',
-                    'location_': 'Lokalizacja: ',
-                    'contract_type_': 'Umowa: ',
-                    'tech_': 'Tech: '
-                }
-                for eng, pl in translations.items():
-                    if col_name.startswith(eng):
-                        clean_name = col_name.replace(eng, pl)
-                        return clean_name[:35] + "..." if len(clean_name) > 35 else clean_name
-                return col_name
-            
-            df_importance['Cecha_Display'] = df_importance['Cecha'].apply(format_label)
-            
-            fig_ai, ax_ai = plt.subplots(figsize=(10, 5))
-            
-            ax_ai.barh(df_importance['Cecha_Display'][::-1], df_importance['Waga (%)'][::-1], color='#ff4b4b')
-            
-            ax_ai.set_xlabel('Wpływ na ostateczną pensję (%)')
-            ax_ai.set_title('Top 10 czynników podbijających wycenę kandydata')
-            
-
-            plt.tight_layout() 
-            
-            st.pyplot(fig_ai)
+            st.markdown("---")
+            st.subheader("🧠 Wyjaśnialne AI (Co wpływa na pensję?)")
+            if hasattr(ml_model, 'feature_importances_'):
+                importances = ml_model.feature_importances_
+                df_importance = pd.DataFrame({'Cecha': ml_columns, 'Waga (%)': importances * 100})
+                df_importance = df_importance.sort_values(by='Waga (%)', ascending=False).head(10)
+                
+                def format_label(col_name):
+                    translations = {'seniority_': 'Poziom: ', 'kategoria_': 'Kategoria: ', 'location_': 'Lokalizacja: ', 'contract_type_': 'Umowa: ', 'tech_': 'Tech: '}
+                    for eng, pl in translations.items():
+                        if col_name.startswith(eng):
+                            clean_name = col_name.replace(eng, pl)
+                            return clean_name[:35] + "..." if len(clean_name) > 35 else clean_name
+                    return col_name
+                
+                df_importance['Cecha_Display'] = df_importance['Cecha'].apply(format_label)
+                fig_ai, ax_ai = plt.subplots(figsize=(10, 5))
+                ax_ai.barh(df_importance['Cecha_Display'][::-1], df_importance['Waga (%)'][::-1], color='#ff4b4b')
+                ax_ai.set_xlabel('Wpływ na ostateczną pensję (%)')
+                ax_ai.set_title('Top 10 czynników podbijających wycenę kandydata')
+                plt.tight_layout() 
+                st.pyplot(fig_ai)
+            else:
+                st.info("Załadowany model nie wspiera wyodrębniania ważności cech.")
         else:
-            st.info("Załadowany model nie wspiera wyodrębniania ważności cech.")
-
-    except FileNotFoundError:
-        st.error("Brak plików modelu (salary_model.pkl / model_columns.pkl).")
+            st.error("Błąd: Nie udało się załadować pików modelu (salary_model.pkl / model_columns.pkl).")
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
         
 # --- Zakładka 5: System Rekomendacji NLP ---
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
-    st.markdown("Algorytm przeanalizuje Twoje umiejętności i matematycznie dopasuje je do bazy ofert.")
-    
     try:
-        df_nlp_raw = fetch_poland_data()
-        
-        if not df_nlp_raw.empty:
-            vectorizer, tfidf_matrix, df_nlp = prepare_nlp_matrix(df_nlp_raw)
+        if not df_pl_main.empty:
+            vectorizer, tfidf_matrix, df_nlp = prepare_nlp_matrix(df_pl_main)
             
             user_skills = st.text_area(
-                "Wpisz swoje technologie i doświadczenie (np. 'Python, SQL, AWS, Docker, 3 lata doświadczenia w budowaniu rurociągów danych'):",
+                "Wpisz swoje technologie i doświadczenie (np. 'Python, SQL, AWS, Docker'):",
                 height=100
             )
-            
             if st.button("Znajdź idealne oferty", type="primary"):
                 if len(user_skills) < 5:
                     st.warning("Wpisz więcej informacji, aby algorytm miał na czym pracować!")
@@ -461,27 +391,22 @@ with tab_nlp:
                         top_5_indices = cosine_similarities.argsort()[-5:][::-1]
                         
                         st.subheader("Oto 5 najlepszych dopasowań:")
-                        
                         for i, idx in enumerate(top_5_indices):
                             score = cosine_similarities[idx]
                             row = df_nlp.iloc[idx]
-                            
                             if score > 0.05:
                                 with st.expander(f"{i+1}. {row['title']} w {row['company_name']} (Dopasowanie: {score*100:.1f}%)"):
                                     st.write(f"**Lokalizacja:** {row['location']} | **Zdalnie:** {'Tak' if row['remote'] else 'Nie'}")
                                     st.write(f"**Umowa:** {row['contract_type']}")
-                                    
                                     zarobki = "Brak widełek"
                                     if pd.notna(row['salary_min']) and pd.notna(row['salary_max']):
                                         zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}"
                                     st.write(f"**Zarobki:** {zarobki}")
-                                    
                                     st.write(f"**Wymagane technologie:** {row['technologie']}")
                                     st.markdown(f"[🔗 Kliknij, aby aplikować]({row['url']})")
                             else:
                                 if i == 0:
                                     st.info("Brak silnego dopasowania w bazie dla podanych umiejętności.")
                                 break
-
     except Exception as e:
         st.error(f"Błąd modułu NLP: {e}")
