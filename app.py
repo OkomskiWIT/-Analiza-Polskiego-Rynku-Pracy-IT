@@ -169,8 +169,8 @@ with st.spinner("Ładowanie danych z bazy..."):
     ml_model, ml_columns = load_ml_model()
 
 tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
-    "Rynek Polski & Zarobki", 
-    "Rynek Globalny", 
+    "🇵🇱 Rynek Polski & Zarobki", 
+    "🌏 Rynek Globalny", 
     "🔥 Top Technologie", 
     "🤖 Kalkulator ML",
     "🎯 Dopasuj Ofertę (NLP)"
@@ -209,7 +209,7 @@ with tab_pl:
             
             column_config_pl = {
                 "date_added": st.column_config.DateColumn("Data", format="YYYY-MM-DD", width="small"),
-                "kategoria": st.column_config.TextColumn("Kategoria", width="small"),
+                "kategoria": st.column_config.TextColumn("Kategoria", width="medium"),
                 "title": st.column_config.TextColumn("Stanowisko", width="large"),
                 "company_name": st.column_config.TextColumn("Firma", width="medium"),
                 "location": st.column_config.TextColumn("Lokalizacja", width="medium"),
@@ -296,6 +296,7 @@ with tab_tech:
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
+# --- Zakładka 4: Estymator ML ---
 with tab_ai:
     st.header("🤖 Estymator Wynagrodzeń ML")
     st.markdown("---")
@@ -312,23 +313,43 @@ with tab_ai:
                 ])
                 user_seniority = st.selectbox("Seniority", ["Junior", "Mid", "Senior"])
                 user_contract = st.selectbox("Typ umowy", ["B2B", "UoP", "Inna"])
+            
             with col2:
                 user_location = st.selectbox("Lokalizacja", ["Warszawa", "Kraków", "Wrocław", "Gdańsk", "Poznań", "Łódź", "Katowice", "Zdalnie"])
                 user_remote = st.selectbox("Praca w pełni zdalna", ["True", "False"])
+            
             with col3:
-                st.write("Stack:")
-                user_python = st.checkbox("Python")
+                st.write("**Główny Stack Technologiczny:**")
+                user_python = st.checkbox("Python / Django / FastAPI")
                 user_java = st.checkbox("Java / Spring")
-                user_data = st.checkbox("SQL / Data / BI")
-                user_cloud = st.checkbox("AWS / Docker / Cloud")
-                user_frontend = st.checkbox("React / Angular / Vue")
+                user_csharp = st.checkbox("C# / .NET")
+                user_php_ruby = st.checkbox("PHP / Ruby")
+                user_frontend = st.checkbox("Frontend (JS/TS/React/Vue)")
+                user_data = st.checkbox("Data / SQL / ML / AI")
+                user_cloud = st.checkbox("DevOps / Cloud / Docker")
+                user_mobile = st.checkbox("Mobile (Swift/Kotlin/Flutter)")
+                user_cpp = st.checkbox("C++ / GameDev")
+                user_testing = st.checkbox("Testing / QA")
+                user_erp = st.checkbox("ERP / CRM (SAP/Salesforce)")
 
             if st.button("Oblicz estymację", type="primary"):
                 input_data = pd.DataFrame({
-                    'kategoria': [user_kategoria], 'location': [user_location], 'seniority': [user_seniority],
-                    'remote': [user_remote], 'contract_type': [user_contract], 'tech_python': [1 if user_python else 0],
-                    'tech_java': [1 if user_java else 0], 'tech_data_sql': [1 if user_data else 0],
-                    'tech_cloud': [1 if user_cloud else 0], 'tech_frontend': [1 if user_frontend else 0]
+                    'kategoria': [user_kategoria], 
+                    'location': [user_location], 
+                    'seniority': [user_seniority],
+                    'remote': [user_remote], 
+                    'contract_type': [user_contract], 
+                    'tech_python': [1 if user_python else 0],
+                    'tech_java': [1 if user_java else 0], 
+                    'tech_data_sql': [1 if user_data else 0],
+                    'tech_cloud': [1 if user_cloud else 0], 
+                    'tech_frontend': [1 if user_frontend else 0],
+                    'tech_csharp_net': [1 if user_csharp else 0],
+                    'tech_cpp_gamedev': [1 if user_cpp else 0],
+                    'tech_mobile': [1 if user_mobile else 0],
+                    'tech_php_ruby': [1 if user_php_ruby else 0],
+                    'tech_testing_qa': [1 if user_testing else 0],
+                    'tech_erp_crm': [1 if user_erp else 0]
                 })
 
                 input_encoded = pd.get_dummies(input_data)
@@ -336,7 +357,6 @@ with tab_ai:
                 prediction = ml_model.predict(input_encoded)[0]
 
                 st.success(f"Estymowane widełki: **{prediction:,.0f} PLN**")
-                st.caption(f"MAE modelu XGBoost: ~4723 PLN.")
 
             st.markdown("---")
             st.subheader("🧠 Wyjaśnialne AI (Co wpływa na pensję?)")
@@ -346,7 +366,23 @@ with tab_ai:
                 df_importance = df_importance.sort_values(by='Waga (%)', ascending=False).head(10)
                 
                 def format_label(col_name):
-                    translations = {'seniority_': 'Poziom: ', 'kategoria_': 'Kategoria: ', 'location_': 'Lokalizacja: ', 'contract_type_': 'Umowa: ', 'tech_': 'Tech: '}
+                    translations = {
+                        'seniority_': 'Poziom: ', 
+                        'kategoria_': 'Kategoria: ', 
+                        'location_': 'Lokalizacja: ', 
+                        'contract_type_': 'Umowa: ',
+                        'tech_python': 'Tech: Python',
+                        'tech_java': 'Tech: Java',
+                        'tech_data_sql': 'Tech: Data/SQL/AI',
+                        'tech_cloud': 'Tech: DevOps/Cloud',
+                        'tech_frontend': 'Tech: Frontend',
+                        'tech_csharp_net': 'Tech: C#/.NET',
+                        'tech_cpp_gamedev': 'Tech: C++/GameDev',
+                        'tech_mobile': 'Tech: Mobile',
+                        'tech_php_ruby': 'Tech: PHP/Ruby',
+                        'tech_testing_qa': 'Tech: QA/Testing',
+                        'tech_erp_crm': 'Tech: ERP/CRM'
+                    }
                     for eng, pl in translations.items():
                         if col_name.startswith(eng):
                             clean_name = col_name.replace(eng, pl)
@@ -363,10 +399,10 @@ with tab_ai:
             else:
                 st.info("Załadowany model nie wspiera wyodrębniania ważności cech.")
         else:
-            st.error("Błąd: Nie udało się załadować pików modelu (salary_model.pkl / model_columns.pkl).")
+            st.error("Błąd: Nie udało się załadować plików modelu (salary_model.pkl / model_columns.pkl). Zrób git pull lub upewnij się, że skrypt ML się wykonał.")
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
-        
+# --- Zakładka 5: Dopasowanie Ofert (NLP) ---   
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
