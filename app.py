@@ -161,7 +161,7 @@ def build_interactive_map(df, max_pins=2000):
     return m, laczna_liczba_wczytanych_ofert, []
 
 # ==========================================
-# WSTRZYKNIĘCIE CSS (RESPONSYWNOŚĆ I STYL)
+# CSS (RESPONSYWNOŚĆ I STYL)
 # ==========================================
 def apply_custom_css():
     st.markdown("""
@@ -330,10 +330,10 @@ with tab_pl:
     elif sort_option == "Najwyższych zarobkach (max)" and 'salary_max' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False)
 
-    # GENERATOR HTML DLA KAFELKÓW
+# GENERATOR HTML DLA KAFELKÓW
     if not df_pl_filtered.empty:
         html_content = '<div class="offers-grid">'
-        # Limit do 120 ofert, by nie zabić przeglądarki DOM-em (przy 5000+ ofert nikt i tak nie przewinie do końca)
+        # Limit do 120 ofert
         for idx, row in df_pl_filtered.head(120).iterrows():
             zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) else "Brak podanych widełek"
             
@@ -342,22 +342,19 @@ with tab_pl:
             kategoria_badge = f'<span class="badge">💻 {row["kategoria"]}</span>'
             lokalizacja_badge = f'<span class="badge">📍 {row["location"]}</span>'
             
-            html_content += f"""
-            <div class="offer-card">
-                <div>
-                    <div class="offer-title">{str(row['title']).replace('<', '').replace('>', '')}</div>
-                    <div class="offer-company">🏢 {str(row['company_name']).replace('<', '').replace('>', '')}</div>
-                    <div class="offer-salary">💰 {zarobki}</div>
-                    <div style="margin-bottom: 0.5rem; line-height: 2;">
-                        {kategoria_badge}
-                        {lokalizacja_badge}
-                        {zdalnie_badge}
-                        {umowa_badge}
-                    </div>
-                </div>
-                <a href="{row['url']}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>
-            </div>
-            """
+            # Kod HTML bez wcięć, aby zablokować tworzenie bloków kodu przez Markdown
+            html_content += f"""<div class="offer-card">
+<div>
+<div class="offer-title">{str(row['title']).replace('<', '').replace('>', '')}</div>
+<div class="offer-company">🏢 {str(row['company_name']).replace('<', '').replace('>', '')}</div>
+<div class="offer-salary">💰 {zarobki}</div>
+<div style="margin-bottom: 0.5rem; line-height: 2;">
+{kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}
+</div>
+</div>
+<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>
+</div>"""
+
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
             html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Użyj filtrów bocznych, aby zawęzić listę.</p>'
