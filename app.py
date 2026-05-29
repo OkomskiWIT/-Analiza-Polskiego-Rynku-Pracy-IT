@@ -13,7 +13,7 @@ from streamlit_folium import st_folium, folium_static
 
 DB_URL = st.secrets["DB_URL"]
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def fetch_global_data():
     engine = create_engine(DB_URL)
     df = pd.read_sql("SELECT * FROM job_offers;", engine)
@@ -24,7 +24,7 @@ def fetch_global_data():
         df['remote'] = df['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
     return df
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def fetch_poland_data():
     engine = create_engine(DB_URL)
     df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
@@ -43,7 +43,7 @@ def fetch_poland_data():
             
     return df.reset_index(drop=True)
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def get_tech_counts(df):
     if 'technologie' not in df.columns:
         return pd.Series(dtype=int)
@@ -53,7 +53,7 @@ def get_tech_counts(df):
     tech_series = tech_series[(tech_series != '') & (tech_series != 'NAN') & (tech_series != 'NONE')]
     return tech_series.value_counts()
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def prepare_nlp_matrix(df):
     df_clean = df.copy()
     df_clean['technologie'] = df_clean['technologie'].fillna('')
@@ -101,34 +101,43 @@ def build_interactive_map(df, max_pins=2000):
                 
             for loc in coords_list:
                 if laczna_liczba_wczytanych_ofert >= max_pins: break
-                lat = loc.get('lat')
-                lon = loc.get('lon')
                 
-                if lat and lon:
-                    lat, lon = float(lat), float(lon)
+                try:
+                    lat_val = loc.get('lat')
+                    lon_val = loc.get('lon')
+                    if lat_val is None or lon_val is None:
+                        continue
+                        
+                    lat = float(lat_val)
+                    lon = float(lon_val)
+                    
+                    if pd.isna(lat) or pd.isna(lon):
+                        continue
                     if not (49.0 <= lat <= 55.0 and 14.0 <= lon <= 25.0):
                         continue
+                except (ValueError, TypeError):
+                    continue
                     
-                    coord_key = (lat, lon)
-                    ulica = loc.get('street', '')
-                    miasto = loc.get('city', '')
-                    adres = f"{ulica}, {miasto}" if ulica else miasto
-                    
-                    zarobki = "Brak widełek"
-                    if pd.notna(getattr(row, 'salary_min', None)) and pd.notna(getattr(row, 'salary_max', None)):
-                        zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
-                    
-                    if coord_key not in grouped_offers:
-                        grouped_offers[coord_key] = {
-                            'adres': adres,
-                            'firmy': set(),
-                            'oferty_html': []
-                        }
-                    
-                    grouped_offers[coord_key]['firmy'].add(row.company_name)
-                    offer_html = f"<li style='margin-bottom: 5px;'><b>{row.title}</b><br>💰 {zarobki} | <a href='{row.url}' target='_blank'>Aplikuj</a></li>"
-                    grouped_offers[coord_key]['oferty_html'].append(offer_html)
-                    laczna_liczba_wczytanych_ofert += 1
+                coord_key = (lat, lon)
+                ulica = loc.get('street', '')
+                miasto = loc.get('city', '')
+                adres = f"{ulica}, {miasto}" if ulica else miasto
+                
+                zarobki = "Brak widełek"
+                if pd.notna(getattr(row, 'salary_min', None)) and pd.notna(getattr(row, 'salary_max', None)):
+                    zarobki = f"{int(row.salary_min)} - {int(row.salary_max)} {row.currency}"
+                
+                if coord_key not in grouped_offers:
+                    grouped_offers[coord_key] = {
+                        'adres': adres,
+                        'firmy': set(),
+                        'oferty_html': []
+                    }
+                
+                grouped_offers[coord_key]['firmy'].add(row.company_name)
+                offer_html = f"<li style='margin-bottom: 5px;'><b>{row.title}</b><br>💰 {zarobki} | <a href='{row.url}' target='_blank'>Aplikuj</a></li>"
+                grouped_offers[coord_key]['oferty_html'].append(offer_html)
+                laczna_liczba_wczytanych_ofert += 1
         except Exception:
             pass
 
@@ -162,6 +171,12 @@ def build_interactive_map(df, max_pins=2000):
 
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 st.title("Analityka Rynku Pracy IT")
+
+with st.sidebar:
+    st.header("⚙️ Zarządzanie")
+    if st.button("🔄 Odśwież bazę z chmury", type="primary"):
+        st.cache_data.clear()
+        st.rerun()
 
 with st.spinner("Ładowanie danych z bazy..."):
     df_global_main = fetch_global_data()
@@ -296,7 +311,6 @@ with tab_tech:
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
-# --- Zakładka 4: Estymator ML ---
 with tab_ai:
     st.header("🤖 Estymator Wynagrodzeń ML")
     st.markdown("---")
@@ -402,13 +416,11 @@ with tab_ai:
             st.error("Błąd: Nie udało się załadować plików modelu (salary_model.pkl / model_columns.pkl). Zrób git pull lub upewnij się, że skrypt ML się wykonał.")
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
-# --- Zakładka 5: Dopasowanie Ofert (NLP) ---   
+
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
         if not df_pl_main.empty:
-            vectorizer, tfidf_matrix, df_nlp = prepare_nlp_matrix(df_pl_main)
-            
             user_skills = st.text_area(
                 "Wpisz swoje technologie i doświadczenie (np. 'Python, SQL, AWS, Docker'):",
                 height=100
@@ -418,6 +430,8 @@ with tab_nlp:
                     st.warning("Wpisz więcej informacji, aby algorytm miał na czym pracować!")
                 else:
                     with st.spinner('Obliczanie macierzy podobieństwa...'):
+                        vectorizer, tfidf_matrix, df_nlp = prepare_nlp_matrix(df_pl_main)
+                        
                         user_tfidf = vectorizer.transform([user_skills])
                         cosine_similarities = cosine_similarity(user_tfidf, tfidf_matrix).flatten()
                         top_5_indices = cosine_similarities.argsort()[-5:][::-1]
