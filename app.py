@@ -279,38 +279,23 @@ with st.spinner("Ładowanie danych z bazy..."):
 
 st.title("Analityka Rynku Pracy IT")
 
-# ==========================================
-# NOWOŚĆ: GLOBALNA WYSZUKIWARKA I FILTRY NA SAMYM GÓRZE STRONY MAIN
-# ==========================================
-with st.expander("🔍 Panel Wyszukiwarki i Filtrów Globalnych", expanded=True):
-    col_search, col_cat, col_remote = st.columns([2, 1, 1])
-    with col_search:
-        wyszukiwarka = st.text_input("Wyszukaj frazę:", placeholder="Wpisz np. Python, Warszawa, Senior, Comarch...")
+# --- FILTRY SEGMENTOWE (NA GÓRZE STRONY MAIN) ---
+with st.expander("🎛️ Filtry Segmentowe i Kategoryzacja", expanded=True):
+    col_cat, col_remote, col_sys = st.columns([2, 2, 1])
     with col_cat:
         kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
         wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
     with col_remote:
-        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True) # Wyrównanie w pionie
+        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
         tylko_zdalnie = st.checkbox("🏠 Tylko praca zdalna")
-
-    col_sys, _ = st.columns([1, 3])
     with col_sys:
+        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Odśwież bazę danych", type="secondary", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
-# APLIKOWANIE FILTRÓW DO GŁÓWNEJ RAMKI PL
+# WSTĘPNE FILTROWANIE RAMKI PL
 df_pl_filtered = df_pl_main.copy()
-
-if wyszukiwarka:
-    w_low = wyszukiwarka.lower()
-    mask = (
-        df_pl_filtered['title'].str.lower().str.contains(w_low, na=False) |
-        df_pl_filtered['company_name'].str.lower().str.contains(w_low, na=False) |
-        df_pl_filtered['technologie'].str.lower().str.contains(w_low, na=False)
-    )
-    df_pl_filtered = df_pl_filtered[mask]
-
 if wybrana_kategoria != 'Wszystkie':
     df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
 if tylko_zdalnie:
@@ -330,14 +315,30 @@ tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
 
 # --- Zakładka 1: Rynek Polski (OFERTY) ---
 with tab_pl_oferty:
-    kpi1, kpi2 = st.columns(2)
-    with kpi1:
-        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
-    with kpi2:
-        praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
-        st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
+    # Rezerwacja miejsca na KPI na samym górze zakładki
+    metric_placeholder = st.container()
 
-    st.markdown("---")
+    wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android, Comarch...)")
+
+    # Dynamiczne aplikowanie wyszukiwarki tekstowej
+    if wyszukiwarka:
+        w_low = wyszukiwarka.lower()
+        mask = (
+            df_pl_filtered['title'].str.lower().str.contains(w_low, na=False) |
+            df_pl_filtered['company_name'].str.lower().str.contains(w_low, na=False) |
+            df_pl_filtered['technologie'].str.lower().str.contains(w_low, na=False)
+        )
+        df_pl_filtered = df_pl_filtered[mask]
+
+    # Wstrzyknięcie wartości do zarezerwowanego kontenera KPI na górze zakładki, aby reagowały na wyszukiwarkę i filtry
+    with metric_placeholder:
+        kpi1, kpi2 = st.columns(2)
+        with kpi1:
+            st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+        with kpi2:
+            praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
+            st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
+        st.markdown("---")
 
     sort_option = st.selectbox("Sortuj oferty po:", [
         "Najnowsze", 
@@ -378,7 +379,7 @@ with tab_pl_oferty:
 </div>"""
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
-            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z panelu filtrów na samej górze strony, aby zawęzić wyniki.</p>'
+            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów oraz wyszukiwarki wyżej, aby zawęzić wyniki.</p>'
             
         st.markdown(html_content, unsafe_allow_html=True)
     else:
@@ -387,7 +388,7 @@ with tab_pl_oferty:
 # --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
 with tab_pl_analiza:
     st.header("Dane Statystyczne i Mapa")
-    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane na górze strony.")
+    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane na górze oraz w pierwszej zakładce.")
     
     kpi1_a, kpi2_a, kpi3_a = st.columns(3)
     with kpi1_a:
