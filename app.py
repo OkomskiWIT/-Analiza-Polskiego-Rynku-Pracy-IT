@@ -260,7 +260,7 @@ with tab_pl:
                     st.write("**Liczba ofert w danej kategorii**")
                     oferty_kategorie = df_pl_main['kategoria'].value_counts().reset_index()
                     oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
-                    st.bar_chart(data=oferty_kategorie, x='kategoria', y='Liczba ofert')
+                    st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
                 with col2:
                     st.write("**Średnia pensja w kategorii (PLN)**")
                     srednia_kategorie = df_pl_main.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
