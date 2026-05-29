@@ -23,6 +23,10 @@ def fetch_global_data():
     df = df.reset_index(drop=True)
     if 'Lp.' not in df.columns:
         df.insert(0, 'Lp.', range(1, len(df) + 1))
+        
+    if 'title' in df.columns:
+        df['title'] = df['title'].apply(lambda x: str(x)[0].upper() + str(x)[1:] if pd.notna(x) and str(x).strip() else x)
+        
     if 'remote' in df.columns:
         df['remote'] = df['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
     return df
@@ -35,6 +39,9 @@ def fetch_poland_data():
     if not df.empty:
         df['salary_avg'] = (df['salary_min'] + df['salary_max']) / 2
         
+        if 'title' in df.columns:
+            df['title'] = df['title'].apply(lambda x: str(x)[0].upper() + str(x)[1:] if pd.notna(x) and str(x).strip() else x)
+            
         if 'remote' in df.columns:
             df['remote'] = df['remote'].map({True: "Tak", False: "Nie"}).fillna("Brak")
             
@@ -170,7 +177,6 @@ def apply_custom_css():
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        /* Zaokrąglone rogi kontenerów */
         div[data-testid="stExpander"] {
             border-radius: 12px !important;
             border: 1px solid #E2E8F0 !important;
@@ -178,7 +184,6 @@ def apply_custom_css():
             background-color: #FFFFFF;
         }
         
-        /* Siatka ofert - Grid */
         .offers-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -187,7 +192,6 @@ def apply_custom_css():
             padding-bottom: 2rem;
         }
         
-        /* Karta pojedynczej oferty */
         .offer-card {
             background-color: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -210,6 +214,7 @@ def apply_custom_css():
             color: #1E293B;
             margin-bottom: 0.5rem;
             line-height: 1.3;
+            text-transform: capitalize;
         }
         .offer-company {
             font-size: 0.95rem;
@@ -227,7 +232,6 @@ def apply_custom_css():
             padding: 0.3rem 0.6rem;
             border-radius: 6px;
         }
-        /* Odznaki (Badge) */
         .badge {
             display: inline-block;
             padding: 0.3rem 0.6rem;
@@ -242,7 +246,6 @@ def apply_custom_css():
         .badge.remote { background-color: #DBEAFE; color: #1D4ED8; }
         .badge.b2b { background-color: #FEF3C7; color: #B45309; }
         
-        /* Przycisk Aplikuj */
         .apply-btn {
             display: block;
             text-align: center;
@@ -257,7 +260,6 @@ def apply_custom_css():
         }
         .apply-btn:hover { background-color: #1D4ED8; }
         
-        /* Odstępy na mobile */
         @media (max-width: 768px) {
             .block-container { padding-top: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important; }
         }
@@ -270,7 +272,6 @@ def apply_custom_css():
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide", initial_sidebar_state="expanded")
 apply_custom_css()
 
-# Pobieranie danych
 with st.spinner("Ładowanie danych z bazy..."):
     df_global_main = fetch_global_data()
     df_pl_main = fetch_poland_data()
@@ -278,8 +279,10 @@ with st.spinner("Ładowanie danych z bazy..."):
 
 # --- PANEL BOCZNY (FILTRY GLOBALNE) ---
 with st.sidebar:
-    st.header("🎛️ Filtruj Wyniki")
-    st.markdown("Filtry działają na tabelę ofert, mapę oraz statystyki z Polski.")
+    st.header("🎛️ Wyszukiwarka i Filtry")
+    st.markdown("Działają na tabelę ofert, mapę oraz statystyki z Polski.")
+    
+    wyszukiwarka = st.text_input("🔍 Szukaj (stanowisko, firma, tech...)")
     
     kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
     wybrana_kategoria = st.selectbox("Kategoria IT", kategorie_lista)
@@ -293,6 +296,16 @@ with st.sidebar:
 
 # APLIKOWANIE FILTRÓW DO GŁÓWNEJ RAMKI PL
 df_pl_filtered = df_pl_main.copy()
+
+if wyszukiwarka:
+    w_low = wyszukiwarka.lower()
+    mask = (
+        df_pl_filtered['title'].str.lower().str.contains(w_low, na=False) |
+        df_pl_filtered['company_name'].str.lower().str.contains(w_low, na=False) |
+        df_pl_filtered['technologie'].str.lower().str.contains(w_low, na=False)
+    )
+    df_pl_filtered = df_pl_filtered[mask]
+
 if wybrana_kategoria != 'Wszystkie':
     df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
 if tylko_zdalnie:
@@ -300,40 +313,45 @@ if tylko_zdalnie:
 
 st.title("Analityka Rynku Pracy IT")
 
-tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
-    "🇵🇱 Rynek Polski & Zarobki", 
+tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
+    "🇵🇱 Oferty (Polska)", 
+    "📊 Analiza i Mapa (PL)",
     "🌏 Rynek Globalny", 
     "🔥 Top Technologie", 
     "🤖 Kalkulator ML",
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
-# --- Zakładka 1: Rynek Polski ---
-with tab_pl:
-    # Sekcja KPI (Wskaźniki biznesowe)
-    kpi1, kpi2, kpi3 = st.columns(3)
+# --- Zakładka 1: Rynek Polski (OFERTY) ---
+with tab_pl_oferty:
+    # ZMIANA: Układ 2-kolumnowy tylko z liczbą ofert i pracą zdalną
+    kpi1, kpi2 = st.columns(2)
     with kpi1:
-        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+        st.metric("📊 Aktywne oferty", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
     with kpi2:
-        srednia = int(df_pl_filtered['salary_avg'].mean()) if not df_pl_filtered.empty and not pd.isna(df_pl_filtered['salary_avg'].mean()) else 0
-        st.metric("💰 Średnia wynagrodzeń", value=f"{srednia:,} PLN".replace(',', ' '))
-    with kpi3:
         praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
         st.metric("🏠 Ofert zdalnych", value=f"{praca_zdalna:,}".replace(',', ' '))
 
     st.markdown("---")
-    
-    # Przełącznik sortowania (zastępstwo za klikanie w nagłówki tabeli)
-    sort_option = st.selectbox("Sortuj oferty po:", ["Najnowsze dacie dodania", "Najwyższych zarobkach (max)"], index=0)
-    if sort_option == "Najnowsze dacie dodania" and 'date_added' in df_pl_filtered.columns:
-        df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
-    elif sort_option == "Najwyższych zarobkach (max)" and 'salary_max' in df_pl_filtered.columns:
-        df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False)
 
-# GENERATOR HTML DLA KAFELKÓW
+    sort_option = st.selectbox("Sortuj oferty po:", [
+        "Domyślnie (Najnowsze)", 
+        "Najwyższych zarobkach", 
+        "Najniższych zarobkach",
+        "Alfabetycznie (Firma)"
+    ], index=0)
+    
+    if sort_option == "Domyślnie (Najnowsze)" and 'date_added' in df_pl_filtered.columns:
+        df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
+    elif sort_option == "Najwyższych zarobkach" and 'salary_max' in df_pl_filtered.columns:
+        df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False, na_position='last')
+    elif sort_option == "Najniższych zarobkach" and 'salary_min' in df_pl_filtered.columns:
+        df_pl_filtered = df_pl_filtered.sort_values(by='salary_min', ascending=True, na_position='last')
+    elif sort_option == "Alfabetycznie (Firma)" and 'company_name' in df_pl_filtered.columns:
+        df_pl_filtered = df_pl_filtered.sort_values(by='company_name', ascending=True)
+
     if not df_pl_filtered.empty:
         html_content = '<div class="offers-grid">'
-        # Limit do 120 ofert
         for idx, row in df_pl_filtered.head(120).iterrows():
             zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) else "Brak podanych widełek"
             
@@ -342,7 +360,6 @@ with tab_pl:
             kategoria_badge = f'<span class="badge">💻 {row["kategoria"]}</span>'
             lokalizacja_badge = f'<span class="badge">📍 {row["location"]}</span>'
             
-            # Kod HTML bez wcięć, aby zablokować tworzenie bloków kodu przez Markdown
             html_content += f"""<div class="offer-card">
 <div>
 <div class="offer-title">{str(row['title']).replace('<', '').replace('>', '')}</div>
@@ -352,43 +369,55 @@ with tab_pl:
 {kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}
 </div>
 </div>
-<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>
+<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz</a>
 </div>"""
-
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
             html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Użyj filtrów bocznych, aby zawęzić listę.</p>'
             
         st.markdown(html_content, unsafe_allow_html=True)
     else:
-        st.info("Brak ofert spełniających kryteria filtrowania.")
+        st.info("Brak ofert spełniających kryteria wyszukiwania i filtrowania.")
+
+# --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
+with tab_pl_analiza:
+    st.header("Dane Statystyczne i Mapa")
+    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry z panelu bocznego.")
+    
+    # Tutaj nadal pokazujemy wszystkie 3 statystyki z medianą
+    kpi1_a, kpi2_a, kpi3_a = st.columns(3)
+    with kpi1_a:
+        st.metric("📊 Aktywne oferty", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+    with kpi2_a:
+        mediana_a = int(df_pl_filtered['salary_avg'].median()) if not df_pl_filtered.empty and not pd.isna(df_pl_filtered['salary_avg'].median()) else 0
+        st.metric("💰 Mediana wynagrodzeń", value=f"{mediana_a:,} PLN".replace(',', ' '))
+    with kpi3_a:
+        praca_zdalna_a = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
+        st.metric("🏠 Ofert zdalnych", value=f"{praca_zdalna_a:,}".replace(',', ' '))
 
     st.markdown("---")
     
-    with st.expander("📊 Pokaż wykresy i analizę statystyczną (Dopasowane do filtrów)", expanded=False):
-        if not df_pl_filtered.empty:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Rozkład kategorii (w wybranym widoku)**")
-                oferty_kategorie = df_pl_filtered['kategoria'].value_counts().reset_index()
-                oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
-                st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
-            with col2:
-                st.write("**Średnia pensja (PLN)**")
-                srednia_kategorie = df_pl_filtered.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
-                if not srednia_kategorie.empty:
-                    st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
-                else:
-                    st.info("Brak danych finansowych do wygenerowania wykresu.")
-        else:
-            st.info("Brak danych po nałożeniu filtrów.")
+    if not df_pl_filtered.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Rozkład kategorii (w wybranym widoku)**")
+            oferty_kategorie = df_pl_filtered['kategoria'].value_counts().reset_index()
+            oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
+            st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
+        with col2:
+            st.write("**Mediana pensji w kategorii (PLN)**")
+            mediana_kategorie = df_pl_filtered.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].median().reset_index()
+            if not mediana_kategorie.empty:
+                st.bar_chart(data=mediana_kategorie, x='kategoria', y='salary_avg')
+            else:
+                st.info("Brak danych finansowych do wygenerowania wykresu.")
+    else:
+        st.info("Brak danych po nałożeniu filtrów.")
 
     st.markdown("---")
     st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
-    st.caption("Mapa prezentuje punkty zgodne z Twoimi ustawieniami w panelu bocznym.")
     if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
         with st.spinner("Przetwarzanie tysięcy koordynatów..."):
-            # Mapa generowana z FILTROWANEJ ramki danych!
             m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl_filtered)
 
         if laczna_liczba_pinezek > 0:
@@ -401,7 +430,7 @@ with tab_pl:
         else:
             st.warning("Brak ofert z poprawnymi danymi geograficznymi dla tych filtrów.")
 
-# --- Zakładka 2: Rynek Globalny ---
+# --- Zakładka 3: Rynek Globalny ---
 with tab_global:
     st.header("Oferty Globalne")
     try:
@@ -420,7 +449,7 @@ with tab_global:
     except Exception as e:
         st.error(f"Błąd ładowania danych globalnych: {e}")
 
-# --- Zakładka 3: Technologie ---
+# --- Zakładka 4: Technologie ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
     st.caption("Poniższe dane analizują cały rynek, ignorując filtry boczne.")
@@ -450,7 +479,7 @@ with tab_tech:
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
-# --- Zakładka 4: Estymator ML ---
+# --- Zakładka 5: Estymator ML ---
 with tab_ai:
     st.header("🤖 Estymator Wynagrodzeń ML")
     st.markdown("---")
@@ -537,7 +566,7 @@ with tab_ai:
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
 
-# --- Zakładka 5: Dopasowanie Ofert (NLP) ---   
+# --- Zakładka 6: Dopasowanie Ofert (NLP) ---   
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
