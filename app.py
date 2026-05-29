@@ -168,7 +168,7 @@ def build_interactive_map(df, max_pins=2000):
     return m, laczna_liczba_wczytanych_ofert, []
 
 # ==========================================
-# CSS (RESPONSYWNOŚĆ I STYL)
+# WSTRZYKNIĘCIE CSS (RESPONSYWNOŚĆ I STYL)
 # ==========================================
 def apply_custom_css():
     st.markdown("""
@@ -269,7 +269,7 @@ def apply_custom_css():
 # ==========================================
 # START APLIKACJI I GŁÓWNY PANEL
 # ==========================================
-st.set_page_config(page_title="Rynek Pracy IT", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 apply_custom_css()
 
 with st.spinner("Ładowanie danych z bazy..."):
@@ -277,22 +277,27 @@ with st.spinner("Ładowanie danych z bazy..."):
     df_pl_main = fetch_poland_data()
     ml_model, ml_columns = load_ml_model()
 
-# --- PANEL BOCZNY (FILTRY GLOBALNE) ---
-with st.sidebar:
-    st.header("🎛️ Wyszukiwarka i Filtry")
-    st.markdown("Działają na tabelę ofert, mapę oraz statystyki z Polski.")
-    
-    wyszukiwarka = st.text_input("🔍 Szukaj (stanowisko, firma, tech...)")
-    
-    kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
-    wybrana_kategoria = st.selectbox("Kategoria IT", kategorie_lista)
-    tylko_zdalnie = st.checkbox("Tylko praca w pełni zdalna")
-    
-    st.markdown("---")
-    st.subheader("⚙️ System")
-    if st.button("🔄 Wymuś odświeżenie bazy", type="primary", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+st.title("Analityka Rynku Pracy IT")
+
+# ==========================================
+# NOWOŚĆ: GLOBALNA WYSZUKIWARKA I FILTRY NA SAMYM GÓRZE STRONY MAIN
+# ==========================================
+with st.expander("🔍 Panel Wyszukiwarki i Filtrów Globalnych", expanded=True):
+    col_search, col_cat, col_remote = st.columns([2, 1, 1])
+    with col_search:
+        wyszukiwarka = st.text_input("Wyszukaj frazę:", placeholder="Wpisz np. Python, Warszawa, Senior, Comarch...")
+    with col_cat:
+        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
+        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
+    with col_remote:
+        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True) # Wyrównanie w pionie
+        tylko_zdalnie = st.checkbox("🏠 Tylko praca zdalna")
+
+    col_sys, _ = st.columns([1, 3])
+    with col_sys:
+        if st.button("🔄 Odśwież bazę danych", type="secondary", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
 # APLIKOWANIE FILTRÓW DO GŁÓWNEJ RAMKI PL
 df_pl_filtered = df_pl_main.copy()
@@ -311,8 +316,9 @@ if wybrana_kategoria != 'Wszystkie':
 if tylko_zdalnie:
     df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
 
-st.title("Analityka Rynku Pracy IT")
+st.markdown("---")
 
+# STRUKTURA ZAKŁADEK
 tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🇵🇱 Oferty (Polska)", 
     "📊 Analiza i Mapa (PL)",
@@ -324,24 +330,23 @@ tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
 
 # --- Zakładka 1: Rynek Polski (OFERTY) ---
 with tab_pl_oferty:
-    # ZMIANA: Układ 2-kolumnowy tylko z liczbą ofert i pracą zdalną
     kpi1, kpi2 = st.columns(2)
     with kpi1:
-        st.metric("📊 Aktywne oferty", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
     with kpi2:
         praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
-        st.metric("🏠 Ofert zdalnych", value=f"{praca_zdalna:,}".replace(',', ' '))
+        st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
 
     st.markdown("---")
 
     sort_option = st.selectbox("Sortuj oferty po:", [
-        "Domyślnie (Najnowsze)", 
+        "Najnowsze", 
         "Najwyższych zarobkach", 
         "Najniższych zarobkach",
         "Alfabetycznie (Firma)"
     ], index=0)
     
-    if sort_option == "Domyślnie (Najnowsze)" and 'date_added' in df_pl_filtered.columns:
+    if sort_option == "Najnowsze" and 'date_added' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
     elif sort_option == "Najwyższych zarobkach" and 'salary_max' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False, na_position='last')
@@ -373,7 +378,7 @@ with tab_pl_oferty:
 </div>"""
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
-            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Użyj filtrów bocznych, aby zawęzić listę.</p>'
+            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z panelu filtrów na samej górze strony, aby zawęzić wyniki.</p>'
             
         st.markdown(html_content, unsafe_allow_html=True)
     else:
@@ -382,9 +387,8 @@ with tab_pl_oferty:
 # --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
 with tab_pl_analiza:
     st.header("Dane Statystyczne i Mapa")
-    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry z panelu bocznego.")
+    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane na górze strony.")
     
-    # Tutaj nadal pokazujemy wszystkie 3 statystyki z medianą
     kpi1_a, kpi2_a, kpi3_a = st.columns(3)
     with kpi1_a:
         st.metric("📊 Aktywne oferty", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
@@ -417,7 +421,7 @@ with tab_pl_analiza:
     st.markdown("---")
     st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
     if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
-        with st.spinner("Przetwarzanie tysięcy koordynatów..."):
+        with st.spinner("Przetwarzanie koordynatów geograficznych..."):
             m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl_filtered)
 
         if laczna_liczba_pinezek > 0:
@@ -452,7 +456,7 @@ with tab_global:
 # --- Zakładka 4: Technologie ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
-    st.caption("Poniższe dane analizują cały rynek, ignorując filtry boczne.")
+    st.caption("Poniższe dane analizują cały rynek, ignorując filtry górne.")
     try:
         tech_counts = get_tech_counts(df_pl_main)
         if not tech_counts.empty:
