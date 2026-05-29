@@ -191,6 +191,7 @@ tab_pl, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
+# --- Zakładka 1: Rynek Globalny ---
 with tab_global:
     st.header("Oferty Globalne")
     try:
@@ -216,6 +217,7 @@ with tab_global:
     except Exception as e:
         st.error(f"Błąd ładowania danych globalnych: {e}")
 
+# --- Zakładka 2: Rynek Polski ---
 with tab_pl:
     st.header("Zarobki i Analiza (Polska)")
     try:
@@ -246,21 +248,23 @@ with tab_pl:
                 df_pl_main[existing_cols_pl], 
                 column_config=column_config_pl, 
                 hide_index=True, 
-                use_container_width=True
+                use_container_width=True,
+                height=450
             )
             
             st.markdown("---")
-            st.subheader("📊 Analiza Kategorii")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Liczba ofert w danej kategorii**")
-                oferty_kategorie = df_pl_main['kategoria'].value_counts().reset_index()
-                oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
-                st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
-            with col2:
-                st.write("**Średnia pensja w kategorii (PLN)**")
-                srednia_kategorie = df_pl_main.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
-                st.bar_chart(data=srednia_kategorie, x='kategoria', y='salary_avg')
+            
+            with st.expander("📊 Pokaż wykresy i analizę statystyczną kategorii", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Liczba ofert w danej kategorii**")
+                    oferty_kategorie = df_pl_main['kategoria'].value_counts().reset_index()
+                    oferty_kategorie.columns = ['Kategoria', 'Liczba ofert']
+                    st.bar_chart(data=oferty_kategorie, x='Kategoria', y='Liczba ofert')
+                with col2:
+                    st.write("**Średnia pensja w kategorii (PLN)**")
+                    srednia_kategorie = df_pl_main.dropna(subset=['salary_avg']).groupby('kategoria')['salary_avg'].mean().reset_index()
+                    st.bar_chart(data=srednia_kategorie, x='Kategoria', y='Srednia pensja')
 
             st.markdown("---")
             st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
@@ -280,6 +284,7 @@ with tab_pl:
     except Exception as e:
         st.error(f"Błąd ładowania danych z Polski: {e}")
 
+# --- Zakładka 3: Analiza Technologii i wymagań na rynku ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
     try:
@@ -311,6 +316,7 @@ with tab_tech:
     except Exception as e:
         st.error(f"Błąd ładowania technologii: {e}")
 
+# --- Zakładka 4: Estymator Wynagrodzeń ML ---
 with tab_ai:
     st.header("🤖 Estymator Wynagrodzeń ML")
     st.markdown("---")
@@ -417,6 +423,7 @@ with tab_ai:
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
 
+# --- Zakładka 5: Dopasowanie Ofert (NLP) ---
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
