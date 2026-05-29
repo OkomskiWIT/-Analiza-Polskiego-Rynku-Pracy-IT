@@ -277,31 +277,7 @@ with st.spinner("Ładowanie danych z bazy..."):
     df_pl_main = fetch_poland_data()
     ml_model, ml_columns = load_ml_model()
 
-st.title("Analityka Rynku Pracy IT")
-
-# --- FILTRY SEGMENTOWE (NA GÓRZE STRONY MAIN) ---
-with st.expander("🎛️ Filtry Segmentowe i Kategoryzacja", expanded=True):
-    col_cat, col_remote, col_sys = st.columns([2, 2, 1])
-    with col_cat:
-        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
-        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
-    with col_remote:
-        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
-        tylko_zdalnie = st.checkbox("🏠 Tylko praca zdalna")
-    with col_sys:
-        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 Odśwież bazę danych", type="secondary", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-# WSTĘPNE FILTROWANIE RAMKI PL
-df_pl_filtered = df_pl_main.copy()
-if wybrana_kategoria != 'Wszystkie':
-    df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
-if tylko_zdalnie:
-    df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
-
-st.markdown("---")
+st.title("Rynek Pracy IT w Polsce i na Świecie 🌍")
 
 # STRUKTURA ZAKŁADEK
 tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
@@ -313,14 +289,37 @@ tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
-# --- Zakładka 1: Rynek Polski (OFERTY) ---
+# --- Zakładka 1: Rynek Polski (OFERTY I FILTRY) ---
 with tab_pl_oferty:
-    # Rezerwacja miejsca na KPI na samym górze zakładki
-    metric_placeholder = st.container()
+    
+    # 1. Panel Sterowania (Wyszukiwarka, Filtry, Sortowanie)
+    col_search, col_cat = st.columns([2, 1])
+    with col_search:
+        wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android...)")
+    with col_cat:
+        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
+        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
+        
+    col_remote, col_sort, col_sys = st.columns([1, 2, 1])
+    with col_remote:
+        st.write("<div style='height:35px;'></div>", unsafe_allow_html=True)
+        tylko_zdalnie = st.checkbox("🏠 Tylko zdalnie")
+    with col_sort:
+        sort_option = st.selectbox("Sortuj oferty po:", [
+            "Domyślnie (Najnowsze)", 
+            "Najwyższych zarobkach", 
+            "Najniższych zarobkach",
+            "Alfabetycznie (Firma)"
+        ], index=0)
+    with col_sys:
+        st.write("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Odśwież bazę", type="secondary", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
-    wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android, Comarch...)")
-
-    # Dynamiczne aplikowanie wyszukiwarki tekstowej
+    # 2. Silnik Filtrowania i Sortowania Danych
+    df_pl_filtered = df_pl_main.copy()
+    
     if wyszukiwarka:
         w_low = wyszukiwarka.lower()
         mask = (
@@ -330,24 +329,13 @@ with tab_pl_oferty:
         )
         df_pl_filtered = df_pl_filtered[mask]
 
-    # Wstrzyknięcie wartości do zarezerwowanego kontenera KPI na górze zakładki, aby reagowały na wyszukiwarkę i filtry
-    with metric_placeholder:
-        kpi1, kpi2 = st.columns(2)
-        with kpi1:
-            st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
-        with kpi2:
-            praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
-            st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
-        st.markdown("---")
+    if wybrana_kategoria != 'Wszystkie':
+        df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
+        
+    if tylko_zdalnie:
+        df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
 
-    sort_option = st.selectbox("Sortuj oferty po:", [
-        "Najnowsze", 
-        "Najwyższych zarobkach", 
-        "Najniższych zarobkach",
-        "Alfabetycznie (Firma)"
-    ], index=0)
-    
-    if sort_option == "Najnowsze" and 'date_added' in df_pl_filtered.columns:
+    if sort_option == "Domyślnie (Najnowsze)" and 'date_added' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
     elif sort_option == "Najwyższych zarobkach" and 'salary_max' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False, na_position='last')
@@ -356,6 +344,19 @@ with tab_pl_oferty:
     elif sort_option == "Alfabetycznie (Firma)" and 'company_name' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='company_name', ascending=True)
 
+    st.markdown("---")
+
+    # 3. Kafelki Informacyjne (KPI)
+    kpi1, kpi2 = st.columns(2)
+    with kpi1:
+        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+    with kpi2:
+        praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
+        st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
+
+    st.markdown("---")
+
+    # 4. Kafelki HTML
     if not df_pl_filtered.empty:
         html_content = '<div class="offers-grid">'
         for idx, row in df_pl_filtered.head(120).iterrows():
@@ -379,7 +380,7 @@ with tab_pl_oferty:
 </div>"""
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
-            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów oraz wyszukiwarki wyżej, aby zawęzić wyniki.</p>'
+            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów wyżej, aby zawęzić listę.</p>'
             
         st.markdown(html_content, unsafe_allow_html=True)
     else:
@@ -388,7 +389,7 @@ with tab_pl_oferty:
 # --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
 with tab_pl_analiza:
     st.header("Dane Statystyczne i Mapa")
-    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane na górze oraz w pierwszej zakładce.")
+    st.caption("Poniższe statystyki reagują na Twoje filtry wybrane w zakładce 'Oferty'.")
     
     kpi1_a, kpi2_a, kpi3_a = st.columns(3)
     with kpi1_a:
@@ -457,7 +458,7 @@ with tab_global:
 # --- Zakładka 4: Technologie ---
 with tab_tech:
     st.header("🔥 Analiza Technologii i Wymagań na Rynku")
-    st.caption("Poniższe dane analizują cały rynek, ignorując filtry górne.")
+    st.caption("Poniższe dane analizują cały rynek, ignorując filtry z zakładki 'Oferty'.")
     try:
         tech_counts = get_tech_counts(df_pl_main)
         if not tech_counts.empty:
