@@ -159,7 +159,7 @@ def build_interactive_map(df, max_pins=2000):
         lista_ofert_html = "".join(data['oferty_html'][:limit_wyswietlania])
         
         if liczba_ofert > limit_wyswietlania:
-            lista_ofert_html += f"<li style='margin-top: 8px; color: #64748B;'><i>...oraz {liczba_ofert - limit_wyswietlania} innych ofert. Użyj filtrów.</i></li>"
+            lista_ofert_html += f"<li style='margin-top: 8px; color: #64748B;'><i>...oraz {liczba_ofert - limit_wyswietlania} innych ofert. Użyj filtrów w panelu bocznym.</i></li>"
 
         popup_html = f"""
         <div style="min-width: 250px; font-family: Arial, sans-serif;">
@@ -390,7 +390,7 @@ with tab_pl_oferty:
 
     # RENDEROWANIE OFERT
     if not df_pl_filtered.empty:
-        html_content = '<div class="offers-grid">'
+        html_content = '<div class="offers-grid">\n'
         
         # Ograniczenie wyświetlania na podstawie zmiennej sesyjnej
         for idx, row in df_pl_filtered.head(st.session_state.offer_limit).iterrows():
@@ -408,32 +408,31 @@ with tab_pl_oferty:
             except:
                 pass
             
-            html_content += (
-                '<div class="offer-card">'
-                '<div>'
-                f'<div class="offer-title">{str(row["title"]).replace("<", "").replace(">", "")}</div>'
-                f'<div class="offer-company">🏢 {str(row["company_name"]).replace("<", "").replace(">", "")}</div>'
-                f'<div class="offer-salary">💰 {zarobki}</div>'
-                '<div style="margin-bottom: 0.5rem; line-height: 2;">'
-                f'{kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}'
-                '</div>'
-                '</div>'
-                '<div>'
-                '<div class="offer-meta">'
-                f'<span>📅 Dodano: {date_str}</span>'
-                '</div>'
-                f'<a href="{row["url"]}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>'
-                '</div>'
-                '</div>'
-            )
+            # Bezpieczny HTML formatowany z nowymi liniami wyrównanymi do lewej krawędzi
+            html_content += f"""<div class="offer-card">
+<div>
+<div class="offer-title">{str(row["title"]).replace("<", "").replace(">", "")}</div>
+<div class="offer-company">🏢 {str(row["company_name"]).replace("<", "").replace(">", "")}</div>
+<div class="offer-salary">💰 {zarobki}</div>
+<div style="margin-bottom: 0.5rem; line-height: 2;">
+{kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}
+</div>
+</div>
+<div>
+<div class="offer-meta">
+<span>📅 Dodano: {date_str}</span>
+</div>
+<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>
+</div>
+</div>\n"""
 
-        html_content += '</div>'
+        html_content += '</div>\n'
         st.markdown(html_content, unsafe_allow_html=True)
         
         # SYSTEM PAGINACJI - Przycisk "Załaduj Więcej"
         if len(df_pl_filtered) > st.session_state.offer_limit:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button(f"⬇️ Załaduj kolejne 120 ofert (Pokazujesz {st.session_state.offer_limit} z {len(df_pl_filtered)})", use_container_width=True):
+            if st.button(f"⬇️ Załaduj kolejne 120 ofert (Pokazuje {st.session_state.offer_limit} z {len(df_pl_filtered)})", use_container_width=True):
                 st.session_state.offer_limit += 120
                 st.rerun()
     else:
