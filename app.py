@@ -37,6 +37,12 @@ def fetch_poland_data():
     df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
     
     if not df.empty:
+        # Sortujemy dane po dacie dodania, aby najnowsze oferty były na górze
+        if 'date_added' in df.columns:
+            df = df.sort_values(by='date_added', ascending=False)
+        # Usuwamy duplikaty na podstawie kluczowych kolumn, zachowując najnowszy wpis
+        df = df.drop_duplicates(subset=['title', 'company_name', 'location', 'salary_min', 'salary_max'], keep='first')
+        
         df['salary_avg'] = (df['salary_min'] + df['salary_max']) / 2
         
         if 'title' in df.columns:
