@@ -159,7 +159,7 @@ def build_interactive_map(df, max_pins=2000):
         lista_ofert_html = "".join(data['oferty_html'][:limit_wyswietlania])
         
         if liczba_ofert > limit_wyswietlania:
-            lista_ofert_html += f"<li style='margin-top: 8px; color: #64748B;'><i>...oraz {liczba_ofert - limit_wyswietlania} innych ofert. Użyj filtrów w panelu bocznym.</i></li>"
+            lista_ofert_html += f"<li style='margin-top: 8px; color: #64748B;'><i>...oraz {liczba_ofert - limit_wyswietlania} innych ofert. Użyj filtrów.</i></li>"
 
         popup_html = f"""
         <div style="min-width: 250px; font-family: Arial, sans-serif;">
@@ -299,35 +299,16 @@ def apply_custom_css():
 st.set_page_config(page_title="Rynek Pracy IT", layout="wide")
 apply_custom_css()
 
+# Inicjalizacja limitu wyświetlania ofert w stanie sesji (paginacja)
+if 'offer_limit' not in st.session_state:
+    st.session_state.offer_limit = 120
+
 with st.spinner("Ładowanie danych z bazy..."):
     df_global_main = fetch_global_data()
     df_pl_main = fetch_poland_data()
     ml_model, ml_columns = load_ml_model()
 
 st.title("Rynek Pracy IT w Polsce i na Świecie 🌍")
-
-# --- PANEL BOCZNY (FILTRY GLOBALNE) ---
-with st.sidebar:
-    st.header("🎛️ Filtry Segmentowe")
-    st.markdown("Działają na tabelę ofert, mapę oraz statystyki z Polski.")
-    
-    kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
-    wybrana_kategoria = st.selectbox("Kategoria IT", kategorie_lista)
-    tylko_zdalnie = st.checkbox("Tylko praca w pełni zdalna")
-    
-    st.markdown("---")
-    st.subheader("⚙️ System")
-    if st.button("🔄 Odśwież bazę danych", type="primary", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-# APLIKOWANIE FILTRÓW DO GŁÓWNEJ RAMKI PL
-df_pl_filtered = df_pl_main.copy()
-
-if wybrana_kategoria != 'Wszystkie':
-    df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
-if tylko_zdalnie:
-    df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
 
 # STRUKTURA ZAKŁADEK
 tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
@@ -341,10 +322,21 @@ tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
 
 # --- Zakładka 1: Rynek Polski (OFERTY) ---
 with tab_pl_oferty:
-    metric_placeholder = st.container()
+    
+    # KONTROLA I FILTRY UMIESZCZONE BEZPOŚREDNIO W ZAKŁADCE 1
+    col_search, col_cat, col_remote = st.columns([2, 1, 1])
+    with col_search:
+        wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Słowo kluczowe (np. Python, Senior...)")
+    with col_cat:
+        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
+        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
+    with col_remote:
+        st.write("<div style='height:35px;'></div>", unsafe_allow_html=True)
+        tylko_zdalnie = st.checkbox("🏠 Tylko praca zdalna")
 
-    wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android, Comarch...)")
-
+    # LOGIKA FILTROWANIA 
+    df_pl_filtered = df_pl_main.copy()
+    
     if wyszukiwarka:
         w_low = wyszukiwarka.lower()
         mask = (
@@ -354,22 +346,27 @@ with tab_pl_oferty:
         )
         df_pl_filtered = df_pl_filtered[mask]
 
-    with metric_placeholder:
-        kpi1, kpi2 = st.columns(2)
-        with kpi1:
-            st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
-        with kpi2:
-            praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
-            st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
-        st.markdown("---")
+    if wybrana_kategoria != 'Wszystkie':
+        df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
 
-    sort_option = st.selectbox("Sortuj oferty po:", [
-        "Najnowsze", 
-        "Najwyższych zarobkach", 
-        "Najniższych zarobkach",
-        "Alfabetycznie"
-    ], index=0)
-    
+    if tylko_zdalnie:
+        df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
+
+    # PANEL SORTOWANIA I ODŚWIEŻANIA
+    col_sort, col_sys = st.columns([3, 1])
+    with col_sort:
+        sort_option = st.selectbox("Sortuj oferty po:", [
+            "Najnowsze", 
+            "Najwyższych zarobkach", 
+            "Najniższych zarobkach",
+            "Alfabetycznie"
+        ], index=0)
+    with col_sys:
+        st.write("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Odśwież bazę", type="secondary", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
     if sort_option == "Najnowsze" and 'date_added' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
     elif sort_option == "Najwyższych zarobkach" and 'salary_max' in df_pl_filtered.columns:
@@ -379,9 +376,24 @@ with tab_pl_oferty:
     elif sort_option == "Alfabetycznie" and 'company_name' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='company_name', ascending=True)
 
+    st.markdown("---")
+
+    # KAFELKI KPI
+    kpi1, kpi2 = st.columns(2)
+    with kpi1:
+        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+    with kpi2:
+        praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
+        st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
+
+    st.markdown("---")
+
+    # RENDEROWANIE OFERT
     if not df_pl_filtered.empty:
-        html_content = '<div class="offers-grid">\n'
-        for idx, row in df_pl_filtered.head(120).iterrows():
+        html_content = '<div class="offers-grid">'
+        
+        # Ograniczenie wyświetlania na podstawie zmiennej sesyjnej
+        for idx, row in df_pl_filtered.head(st.session_state.offer_limit).iterrows():
             zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) else "Brak podanych widełek"
             
             zdalnie_badge = '<span class="badge remote">🌍 Praca Zdalna</span>' if row['remote'] == 'Tak' else ''
@@ -397,36 +409,40 @@ with tab_pl_oferty:
                 pass
             
             html_content += (
-                '<div class="offer-card">\n'
-                '<div>\n'
-                f'<div class="offer-title">{str(row["title"]).replace("<", "").replace(">", "")}</div>\n'
-                f'<div class="offer-company">🏢 {str(row["company_name"]).replace("<", "").replace(">", "")}</div>\n'
-                f'<div class="offer-salary">💰 {zarobki}</div>\n'
-                '<div style="margin-bottom: 0.5rem; line-height: 2;">\n'
-                f'{kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}\n'
-                '</div>\n'
-                '</div>\n'
-                '<div>\n'
-                '<div class="offer-meta">\n'
-                f'<span>📅 Dodano: {date_str}</span>\n'
-                '</div>\n'
-                f'<a href="{row["url"]}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>\n'
-                '</div>\n'
-                '</div>\n'
+                '<div class="offer-card">'
+                '<div>'
+                f'<div class="offer-title">{str(row["title"]).replace("<", "").replace(">", "")}</div>'
+                f'<div class="offer-company">🏢 {str(row["company_name"]).replace("<", "").replace(">", "")}</div>'
+                f'<div class="offer-salary">💰 {zarobki}</div>'
+                '<div style="margin-bottom: 0.5rem; line-height: 2;">'
+                f'{kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}'
+                '</div>'
+                '</div>'
+                '<div>'
+                '<div class="offer-meta">'
+                f'<span>📅 Dodano: {date_str}</span>'
+                '</div>'
+                f'<a href="{row["url"]}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>'
+                '</div>'
+                '</div>'
             )
 
         html_content += '</div>'
-        if len(df_pl_filtered) > 120:
-            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów bocznych i wyszukiwarki, aby zawęzić listę.</p>'
-            
         st.markdown(html_content, unsafe_allow_html=True)
+        
+        # SYSTEM PAGINACJI - Przycisk "Załaduj Więcej"
+        if len(df_pl_filtered) > st.session_state.offer_limit:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(f"⬇️ Załaduj kolejne 120 ofert (Pokazujesz {st.session_state.offer_limit} z {len(df_pl_filtered)})", use_container_width=True):
+                st.session_state.offer_limit += 120
+                st.rerun()
     else:
         st.info("Brak ofert spełniających kryteria wyszukiwania i filtrowania.")
 
 # --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
 with tab_pl_analiza:
     st.header("Dane Statystyczne i Mapa")
-    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane w panelu bocznym i pierwszej zakładce.")
+    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry z pierwszej zakładki.")
     
     kpi1_a, kpi2_a, kpi3_a = st.columns(3)
     with kpi1_a:
@@ -460,12 +476,11 @@ with tab_pl_analiza:
     st.markdown("---")
     st.subheader("🗺️ Interaktywna Mapa Ofert Pracy")
     if st.button("🗺️ Załaduj i pokaż mapę", type="primary"):
-        with st.spinner("Generowanie mapy w pamięci serwera... (bez zapisu na dysk)"):
+        with st.spinner("Generowanie mapy w pamięci serwera..."):
             m, laczna_liczba_pinezek, bledy_log = build_interactive_map(df_pl_filtered)
 
         if laczna_liczba_pinezek > 0:
             st.success(f"Sukces! Załadowano próbkę {laczna_liczba_pinezek} ofert na mapę.")
-            # ZMIANA NA ST_FOLIUM - brak pliku dyskowego temp_map.html!
             st_folium(m, use_container_width=True, height=650, returned_objects=[])
         else:
             st.warning("Brak ofert z poprawnymi danymi geograficznymi dla tych filtrów.")
@@ -606,7 +621,7 @@ with tab_ai:
     except Exception as e:
         st.error(f"Błąd analizy modelu: {e}")
 
-# --- Zakładka 6: Dopasowanie Ofert (NLP) ---   
+# --- Zakładka 6: Dopasowanie Ofert (NLP) --- 
 with tab_nlp:
     st.header("🎯 Inteligentne Dopasowanie Ofert (NLP)")
     try:
