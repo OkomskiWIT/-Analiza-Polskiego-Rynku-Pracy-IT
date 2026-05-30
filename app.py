@@ -10,6 +10,7 @@ from folium.plugins import MarkerCluster
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 from streamlit_folium import st_folium
+from datetime import datetime
 
 DB_URL = st.secrets["DB_URL"]
 
@@ -37,21 +38,17 @@ def fetch_poland_data():
     df = pd.read_sql("SELECT * FROM poland_job_offers;", engine)
     
     if not df.empty:
-        # 1. Sortujemy dane po dacie dodania, aby najnowsze oferty były na górze
+        df['salary_avg'] = (df['salary_min'] + df['salary_max']) / 2
+        
+        # --- ZAAWANSOWANA DEDUPLIKACJA ---
         if 'date_added' in df.columns:
             df = df.sort_values(by='date_added', ascending=False)
             
-        # 2. Tworzymy tymczasowe kolumny do porównywania
         df['temp_title'] = df['title'].astype(str).str.lower().str.replace(r'[^a-z0-9]', '', regex=True)
         df['temp_company'] = df['company_name'].astype(str).str.lower().str.replace(r'(sp\. z o\.o\.|spółka|inc\.|ltd\.|sa|s\.a\.|[^a-z0-9])', '', regex=True)
-        
-        # 3. Usuwamy duplikaty
         df = df.drop_duplicates(subset=['temp_title', 'temp_company'], keep='first')
-        
-        # 4. Sprzątamy po sobie, usuwając kolumny tymczasowe
         df = df.drop(columns=['temp_title', 'temp_company'])
-        
-        df['salary_avg'] = (df['salary_min'] + df['salary_max']) / 2
+        # ---------------------------------
         
         if 'title' in df.columns:
             df['title'] = df['title'].apply(lambda x: str(x)[0].upper() + str(x)[1:] if pd.notna(x) and str(x).strip() else x)
@@ -61,9 +58,6 @@ def fetch_poland_data():
             
         if 'location' in df.columns:
             df['location'] = df['location'].astype(str).str.lstrip(', ').str.replace(r',\s*(,)+', ',', regex=True)
-            
-        if 'date_added' in df.columns:
-            df = df.sort_values(by='date_added', ascending=False)
             
     return df.reset_index(drop=True)
 
@@ -215,7 +209,7 @@ def apply_custom_css():
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            min-height: 280px;
+            min-height: 320px;
         }
         .offer-card:hover {
             transform: translateY(-4px);
@@ -260,6 +254,18 @@ def apply_custom_css():
         .badge.remote { background-color: #DBEAFE; color: #1D4ED8; }
         .badge.b2b { background-color: #FEF3C7; color: #B45309; }
         
+        /* NOWOŚĆ: Stopka z czasem dodania i wygaśnięcia */
+        .offer-meta {
+            font-size: 0.8rem;
+            color: #94A3B8;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #F1F5F9;
+            padding-top: 0.8rem;
+        }
+        
         .apply-btn {
             display: block;
             text-align: center;
@@ -269,7 +275,7 @@ def apply_custom_css():
             border-radius: 8px;
             text-decoration: none;
             font-weight: 600;
-            margin-top: 1rem;
+            margin-top: 0.5rem;
             transition: background-color 0.2s;
         }
         .apply-btn:hover { background-color: #1D4ED8; }
@@ -293,6 +299,30 @@ with st.spinner("Ładowanie danych z bazy..."):
 
 st.title("Rynek Pracy IT w Polsce i na Świecie 🌍")
 
+# --- FILTRY SEGMENTOWE (NA GÓRZE STRONY MAIN) ---
+with st.expander("🎛️ Filtry Segmentowe i Kategoryzacja", expanded=True):
+    col_cat, col_remote, col_sys = st.columns([2, 2, 1])
+    with col_cat:
+        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
+        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
+    with col_remote:
+        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
+        tylko_zdalnie = st.checkbox("🏠 Tylko praca zdalna")
+    with col_sys:
+        st.write("<div style='height:25px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Odśwież bazę danych", type="secondary", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+# WSTĘPNE FILTROWANIE RAMKI PL
+df_pl_filtered = df_pl_main.copy()
+if wybrana_kategoria != 'Wszystkie':
+    df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
+if tylko_zdalnie:
+    df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
+
+st.markdown("---")
+
 # STRUKTURA ZAKŁADEK
 tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🇵🇱 Oferty (Polska)", 
@@ -303,37 +333,12 @@ tab_pl_oferty, tab_pl_analiza, tab_global, tab_tech, tab_ai, tab_nlp = st.tabs([
     "🎯 Dopasuj Ofertę (NLP)"
 ])
 
-# --- Zakładka 1: Rynek Polski (OFERTY I FILTRY) ---
+# --- Zakładka 1: Rynek Polski (OFERTY) ---
 with tab_pl_oferty:
-    
-    # 1. Panel Sterowania (Wyszukiwarka, Filtry, Sortowanie)
-    col_search, col_cat = st.columns([2, 1])
-    with col_search:
-        wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android...)")
-    with col_cat:
-        kategorie_lista = ['Wszystkie'] + sorted(df_pl_main['kategoria'].unique().tolist())
-        wybrana_kategoria = st.selectbox("Kategoria IT:", kategorie_lista)
-        
-    col_remote, col_sort, col_sys = st.columns([1, 2, 1])
-    with col_remote:
-        st.write("<div style='height:35px;'></div>", unsafe_allow_html=True)
-        tylko_zdalnie = st.checkbox("🏠 Tylko zdalnie")
-    with col_sort:
-        sort_option = st.selectbox("Sortuj oferty po:", [
-            "Domyślnie (Najnowsze)", 
-            "Najwyższych zarobkach", 
-            "Najniższych zarobkach",
-            "Alfabetycznie (Firma)"
-        ], index=0)
-    with col_sys:
-        st.write("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 Odśwież bazę", type="secondary", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    metric_placeholder = st.container()
 
-    # 2. Silnik Filtrowania i Sortowania Danych
-    df_pl_filtered = df_pl_main.copy()
-    
+    wyszukiwarka = st.text_input("🔍 Wyszukiwarka ofert:", placeholder="Wpisz słowo kluczowe (np. Python, Senior, Android, Comarch...)")
+
     if wyszukiwarka:
         w_low = wyszukiwarka.lower()
         mask = (
@@ -343,36 +348,35 @@ with tab_pl_oferty:
         )
         df_pl_filtered = df_pl_filtered[mask]
 
-    if wybrana_kategoria != 'Wszystkie':
-        df_pl_filtered = df_pl_filtered[df_pl_filtered['kategoria'] == wybrana_kategoria]
-        
-    if tylko_zdalnie:
-        df_pl_filtered = df_pl_filtered[df_pl_filtered['remote'] == 'Tak']
+    with metric_placeholder:
+        kpi1, kpi2 = st.columns(2)
+        with kpi1:
+            st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
+        with kpi2:
+            praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
+            st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
+        st.markdown("---")
 
-    if sort_option == "Domyślnie (Najnowsze)" and 'date_added' in df_pl_filtered.columns:
+    sort_option = st.selectbox("Sortuj oferty po:", [
+        "Najnowsze", 
+        "Najwyższych zarobkach", 
+        "Najniższych zarobkach",
+        "Alfabetycznie"
+    ], index=0)
+    
+    if sort_option == "Najnowsze" and 'date_added' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='date_added', ascending=False)
     elif sort_option == "Najwyższych zarobkach" and 'salary_max' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='salary_max', ascending=False, na_position='last')
     elif sort_option == "Najniższych zarobkach" and 'salary_min' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='salary_min', ascending=True, na_position='last')
-    elif sort_option == "Alfabetycznie (Firma)" and 'company_name' in df_pl_filtered.columns:
+    elif sort_option == "Alfabetycznie" and 'company_name' in df_pl_filtered.columns:
         df_pl_filtered = df_pl_filtered.sort_values(by='company_name', ascending=True)
 
-    st.markdown("---")
-
-    # 3. Kafelki Informacyjne (KPI)
-    kpi1, kpi2 = st.columns(2)
-    with kpi1:
-        st.metric("📊 Aktywne oferty (po filtrach)", value=f"{len(df_pl_filtered):,}".replace(',', ' '))
-    with kpi2:
-        praca_zdalna = len(df_pl_filtered[df_pl_filtered['remote'] == 'Tak'])
-        st.metric("🏠 Ofert zdalnych (po filtrach)", value=f"{praca_zdalna:,}".replace(',', ' '))
-
-    st.markdown("---")
-
-    # 4. Kafelki HTML
     if not df_pl_filtered.empty:
         html_content = '<div class="offers-grid">'
+        current_time = pd.Timestamp.now()
+        
         for idx, row in df_pl_filtered.head(120).iterrows():
             zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) else "Brak podanych widełek"
             
@@ -380,6 +384,32 @@ with tab_pl_oferty:
             umowa_badge = f'<span class="badge b2b">📄 {row["contract_type"]}</span>' if row['contract_type'] and str(row['contract_type']).strip() != 'Inna' else ''
             kategoria_badge = f'<span class="badge">💻 {row["kategoria"]}</span>'
             lokalizacja_badge = f'<span class="badge">📍 {row["location"]}</span>'
+            
+            # --- OBLICZANIE CZASU ---
+            date_str = "Brak danych"
+            expires_str = "Czas nieznany"
+            
+            try:
+                if 'date_added' in row and pd.notna(row['date_added']):
+                    d_added = pd.to_datetime(row['date_added'])
+                    date_str = d_added.strftime('%Y-%m-%d')
+                    
+                    # Logika wygasania: 30 dni od daty dodania
+                    days_alive = (current_time - d_added).days
+                    days_left = 30 - days_alive
+                    
+                    if days_left > 5:
+                        expires_str = f"⏳ ~ {days_left} dni do końca"
+                    elif 0 < days_left <= 5:
+                        expires_str = f"🔥 Zostało {days_left} dni!"
+                    elif days_left == 0:
+                        expires_str = "⚠️ Wygasa dzisiaj"
+                    else:
+                        expires_str = "⌛ Prawdopodobnie wygasło"
+            except:
+                pass
+            
+            # ------------------------
             
             html_content += f"""<div class="offer-card">
 <div>
@@ -390,11 +420,17 @@ with tab_pl_oferty:
 {kategoria_badge} {lokalizacja_badge} {zdalnie_badge} {umowa_badge}
 </div>
 </div>
-<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz</a>
+<div>
+<div class="offer-meta">
+<span>📅 Dodano: {date_str}</span>
+<span>{expires_str}</span>
+</div>
+<a href="{row['url']}" target="_blank" class="apply-btn">Zobacz i Aplikuj</a>
+</div>
 </div>"""
         html_content += '</div>'
         if len(df_pl_filtered) > 120:
-            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów wyżej, aby zawęzić listę.</p>'
+            html_content += f'<p style="text-align:center; color:#64748B;">Pokazuję pierwsze 120 z {len(df_pl_filtered)} wyników. Skorzystaj z filtrów oraz wyszukiwarki wyżej, aby zawęzić wyniki.</p>'
             
         st.markdown(html_content, unsafe_allow_html=True)
     else:
@@ -403,7 +439,7 @@ with tab_pl_oferty:
 # --- Zakładka 2: Rynek Polski (ANALIZA I MAPA) ---
 with tab_pl_analiza:
     st.header("Dane Statystyczne i Mapa")
-    st.caption("Poniższe statystyki reagują na Twoje filtry wybrane w zakładce 'Oferty'.")
+    st.caption("Poniższe statystyki reagują na Twoje wyszukiwanie i filtry wybrane na górze oraz w pierwszej zakładce.")
     
     kpi1_a, kpi2_a, kpi3_a = st.columns(3)
     with kpi1_a:
