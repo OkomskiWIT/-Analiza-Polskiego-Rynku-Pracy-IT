@@ -394,7 +394,7 @@ with tab_pl_oferty:
         
         # Ograniczenie wyświetlania na podstawie zmiennej sesyjnej
         for idx, row in df_pl_filtered.head(st.session_state.offer_limit).iterrows():
-           zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) and pd.notna(row['salary_max']) else "Brak podanych widełek"
+            zarobki = f"{int(row['salary_min'])} - {int(row['salary_max'])} {row['currency']}" if pd.notna(row['salary_min']) and pd.notna(row['salary_max']) else "Brak podanych widełek"
             
             zdalnie_badge = '<span class="badge remote">🌍 Praca Zdalna</span>' if row['remote'] == 'Tak' else ''
             umowa_badge = f'<span class="badge b2b">📄 {row["contract_type"]}</span>' if row['contract_type'] and str(row['contract_type']).strip() != 'Inna' else ''
