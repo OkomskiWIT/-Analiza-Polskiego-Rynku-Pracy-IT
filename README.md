@@ -55,3 +55,16 @@ Currently, the project utilizes a traditional **ETL (Extract, Transform, Load)**
 **In upcoming iterations (v2.0), the architecture will transition to the modern ELT (Extract, Load, Transform) paradigm:**
 * **Extract & Load:** Raw data will be dumped directly into the Data Warehouse.
 * **Transform:** Transformations will be executed natively within the database using SQL and tools like **dbt (data build tool)**. This will drastically improve pipeline performance, allow for better data lineage tracking, and unlock the full computational power of the modern data stack.
+
+  ---
+
+## 👋 A personal note on the project (Disclaimer)
+
+**Educational Project & Portfolio:** 
+This system is a 100% non-commercial project created purely for learning purposes. After a decade of working in land surveying, I am currently transitioning into the IT sector while simultaneously studying computer science. This data pipeline is simply my private testing ground and a showcase of my engineering skills, not a product aimed at making any profit.
+
+**Respect for Data and Servers:** 
+All job postings and information collected in this application belong to their rightful owners (the job boards). I am not building a competitor to them, and the data scraping mechanism itself was written "politely" – it uses rate limiting to ensure it does not overload the source servers in any way.
+
+**Acknowledgements:**
+Huge thanks to the creators of the open-source tools (Python, Pandas, Streamlit, Scikit-learn) that power this ecosystem, and to the job boards themselves for providing great, real-world data for future engineers to learn from!
