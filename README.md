@@ -1,6 +1,6 @@
 # 📊 Polish IT Job Market: Data Engineering, AI & Analytics Pipeline
 
-**[🚀 Live Dashboard - Click Here to Explore the Data]**
+**[🚀 Live Dashboard - Click Here to Explore the Data](https://kamil-rynek-it.streamlit.app/)**
 
 ## 📝 Overview
 
@@ -20,7 +20,7 @@ This project bridges traditional data engineering with modern AI and MLOps pract
 * **MLOps & CI/CD (GitHub Actions):** Fully automated, scheduled workflows for zero-touch model retraining and data ingestion.
 * **Serving (Streamlit):** An interactive, analytical frontend with spatial analysis (Folium) deployed in the cloud.
 
-## 🧠 Engineering, Data & AI Challenges Solved
+## 💡 Engineering, Data & AI Challenges Solved
 
 ### 1. Cross-Source Deduplication & Precision Loss Recovery
 Job boards often overlap. A single employer might post the exact same job on multiple platforms at different times. I engineered a robust deduplication logic that:
