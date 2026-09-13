@@ -17,7 +17,7 @@ jobs:
 
       - name: 🐳 Uruchomienie tymczasowego serwera MinIO (Data Lake)
         run: |
-          docker run -d -p 9000:9000 --name minio_server -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=supersecretpassword minio/minio server /data
+          docker run -d -p 9000:9000 --name minio_server -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=supersecretpassword quay.io/minio/minio server /data
           sleep 5
 
       - name: 🪣 Konfiguracja klienta i tworzenie bucketa (raw-data)
