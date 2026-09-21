@@ -1,3 +1,4 @@
+import sys
 import requests
 import boto3
 import json
@@ -11,18 +12,23 @@ S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
 
 def extract_nofluffjobs():
+    # NOWOŚĆ: s3={'addressing_style': 'path'} dla lokalnego MinIO
+    my_config = Config(
+        signature_version='s3v4',
+        s3={'addressing_style': 'path'}
+    )
+
     s3_client = boto3.client(
         's3', endpoint_url=S3_ENDPOINT,
         aws_access_key_id=S3_ACCESS_KEY,
         aws_secret_access_key=S3_SECRET_KEY,
         region_name='us-east-1',
-        config=Config(signature_version='s3v4')
+        config=my_config
     )
 
     all_offers = []
     page = 1
     
-   
     url = "https://nofluffjobs.com/api/joboffers/main"
     
     headers = {
@@ -32,7 +38,7 @@ def extract_nofluffjobs():
         "Referer": "https://nofluffjobs.com/pl/"
     }
 
-    print("Rozpoczecie pobierania danych z API No Fluff Jobs...")
+    print("Rozpoczęcie pobierania danych z API No Fluff Jobs...")
 
     while True:
         # Parametry doklejane do URL (zamiast Payloadu)
@@ -52,7 +58,7 @@ def extract_nofluffjobs():
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code != 200:
-                print(f"Blad API (Status {response.status_code}). Zatrzymuje pobieranie.")
+                print(f"Błąd API (Status {response.status_code}). Zatrzymuje pobieranie.")
                 break
                 
             data = response.json()
@@ -64,7 +70,7 @@ def extract_nofluffjobs():
                 oferty_w_paczce = data
             
             if not oferty_w_paczce or len(oferty_w_paczce) == 0:
-                print("Osiagnieto koniec dostepnych ofert NFJ.")
+                print("Osiągnięto koniec dostępnych ofert NFJ.")
                 break
                 
             all_offers.extend(oferty_w_paczce)
@@ -73,10 +79,10 @@ def extract_nofluffjobs():
             time.sleep(1)
             
         except Exception as e:
-            print(f"Blad krytyczny podczas pobierania strony {page}: {e}")
+            print(f"Błąd krytyczny podczas pobierania strony {page}: {e}")
             break
 
-    print(f"Zakonczono. Calkowita liczba pobranych ofert NFJ: {len(all_offers)}")
+    print(f"Zakończono. Całkowita liczba pobranych ofert NFJ: {len(all_offers)}")
 
     if len(all_offers) > 0:
         date_str = datetime.now().strftime("%Y-%m-%d")
@@ -90,7 +96,8 @@ def extract_nofluffjobs():
             )
             print(f"Poprawnie zapisano plik w jeziorze danych: {file_key}")
         except Exception as e:
-            print(f"Blad zapisu do MinIO: {e}")
+            print(f"Błąd zapisu do MinIO: {e}")
+            sys.exit(1) # NOWOŚĆ: Zatrzymaj rurociąg przy błędzie
 
 if __name__ == "__main__":
     extract_nofluffjobs()
