@@ -12,7 +12,7 @@ S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
 
 def extract_nofluffjobs():
-    # NOWOŚĆ: s3={'addressing_style': 'path'} dla lokalnego MinIO
+    # Wymuszenie Path-Style dla lokalnego MinIO
     my_config = Config(
         signature_version='s3v4',
         s3={'addressing_style': 'path'}
@@ -54,7 +54,7 @@ def extract_nofluffjobs():
         
         try:
             print(f"Pobieranie strony {page}...")
-            # Uzywamy zaktualizowanej metody GET
+            # Używamy zaktualizowanej metody GET
             response = requests.get(url, params=params, headers=headers, timeout=15)
             
             if response.status_code != 200:
@@ -88,6 +88,17 @@ def extract_nofluffjobs():
         date_str = datetime.now().strftime("%Y-%m-%d")
         file_key = f"{date_str}/poland_jobs.json"
         
+        # Samodzielne tworzenie bucketa przed zapisem
+        try:
+            s3_client.head_bucket(Bucket=BUCKET_NAME)
+        except Exception:
+            print(f"Bucket '{BUCKET_NAME}' nie istnieje. Tworzę go z poziomu Pythona...")
+            try:
+                s3_client.create_bucket(Bucket=BUCKET_NAME)
+            except Exception as e:
+                print(f"KRYTYCZNY BŁĄD: Nie można utworzyć bucketa. {e}")
+                sys.exit(1)
+                
         try:
             s3_client.put_object(
                 Bucket=BUCKET_NAME,
@@ -97,7 +108,7 @@ def extract_nofluffjobs():
             print(f"Poprawnie zapisano plik w jeziorze danych: {file_key}")
         except Exception as e:
             print(f"Błąd zapisu do MinIO: {e}")
-            sys.exit(1) # NOWOŚĆ: Zatrzymaj rurociąg przy błędzie
+            sys.exit(1) # Zatrzymaj rurociąg przy błędzie
 
 if __name__ == "__main__":
     extract_nofluffjobs()
