@@ -22,10 +22,8 @@ jobs:
 
       - name: 🪣 Konfiguracja klienta i tworzenie bucketa (raw-data)
         run: |
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc
-          chmod +x mc
-          ./mc alias set myminio http://127.0.0.1:9000 admin supersecretpassword
-          ./mc mb myminio/raw-data
+          docker run --rm --network host quay.io/minio/mc alias set myminio http://127.0.0.1:9000 admin supersecretpassword
+          docker run --rm --network host quay.io/minio/mc mb myminio/raw-data
 
       - name: 🐍 Konfiguracja środowiska Python
         uses: actions/setup-python@v4
