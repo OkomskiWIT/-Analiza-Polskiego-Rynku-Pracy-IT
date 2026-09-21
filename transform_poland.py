@@ -1,9 +1,11 @@
 import boto3
 import os
+import sys
 import json
 import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError # NOWOŚĆ
 from botocore.client import Config
 from dotenv import load_dotenv
 
@@ -39,7 +41,21 @@ def assign_category(title_str):
     return 'Inne'
 
 def transform_poland():
-    s3_client = boto3.client('s3', endpoint_url=S3_ENDPOINT, aws_access_key_id=S3_ACCESS_KEY, aws_secret_access_key=S3_SECRET_KEY, region_name='us-east-1', config=Config(signature_version='s3v4'))
+    # NOWOŚĆ: s3={'addressing_style': 'path'} naprawia błąd łączenia z lokalnym MinIO
+    my_config = Config(
+        signature_version='s3v4',
+        s3={'addressing_style': 'path'} 
+    )
+    
+    s3_client = boto3.client(
+        's3', 
+        endpoint_url=S3_ENDPOINT, 
+        aws_access_key_id=S3_ACCESS_KEY, 
+        aws_secret_access_key=S3_SECRET_KEY, 
+        region_name='us-east-1', 
+        config=my_config
+    )
+    
     date_str = datetime.now().strftime("%Y-%m-%d")
     file_key = f"{date_str}/poland_jobs.json"
     
@@ -48,8 +64,8 @@ def transform_poland():
         jobs = json.loads(response['Body'].read().decode('utf-8'))
         print(f"Wczytano {len(jobs)} surowych ofert (NFJ)")
     except Exception as e:
-        print(f"Blad pobierania pliku {file_key}: {e}")
-        return
+        print(f"KRYTYCZNY BŁĄD POBIERANIA Z MINIO: {file_key}. Powód: {e}")
+        sys.exit(1) # NOWOŚĆ: Twarde zatrzymanie skryptu
 
     processed_data = []
     for job in jobs:
@@ -67,7 +83,7 @@ def transform_poland():
         except: date_added = datetime.now().strftime('%Y-%m-%d')
         
         places_list = []
-        coords_list = [] # NOWOŚĆ: Lista na współrzędne
+        coords_list = []
         
         fully_remote = job.get('fullyRemote', False)
         if fully_remote: places_list.append("Remote")
@@ -82,7 +98,6 @@ def transform_poland():
                         places_list.append(city.strip())
                         seen_cities.add(city.lower())
                 
-                # NOWOŚĆ: Ekstrakcja dokładnych koordynat
                 geo = p.get('geolocation', {})
                 lat = geo.get('latitude')
                 lon = geo.get('longitude')
@@ -95,7 +110,7 @@ def transform_poland():
                     })
                         
         location = ", ".join(places_list) if places_list else 'Polska'
-        coordinates_str = json.dumps(coords_list) # Pakujemy do JSONa
+        coordinates_str = json.dumps(coords_list)
         
         salary_data = job.get('salary') or {}
         salary_min, salary_max, currency = salary_data.get('from', None), salary_data.get('to', None), salary_data.get('currency', 'PLN')
@@ -117,7 +132,7 @@ def transform_poland():
             'location': location, 'remote': fully_remote, 'contract_type': contract_type,
             'salary_min': salary_min, 'salary_max': salary_max, 'currency': currency,
             'url': url, 'date_added': date_added, 'technologie': technologie_str,
-            'coordinates': coordinates_str # NOWOŚĆ
+            'coordinates': coordinates_str
         })
 
     df = pd.DataFrame(processed_data)
@@ -137,7 +152,6 @@ def transform_poland():
             if pd.notna(c) and c != 'Inna': zbior.update([x.strip() for x in str(c).split(',')])
         return ", ".join(sorted(list(zbior))) if zbior else "Inna"
 
-    # NOWOŚĆ: Funkcja do łączenia koordynat przy duplikatach ofert
     def scal_koordynaty(seria):
         wszystkie = []
         for item in seria:
@@ -154,17 +168,31 @@ def transform_poland():
         'remote': 'max', 'contract_type': scal_umowy, 'salary_min': 'first',
         'salary_max': 'first', 'currency': 'first', 'url': 'first',
         'date_added': 'max', 'technologie': 'first',
-        'coordinates': scal_koordynaty # NOWOŚĆ
+        'coordinates': scal_koordynaty
     }
 
     df_grouped = df.groupby(['title', 'company_name'], as_index=False).agg(sposob_agregacji)
     print(f"Po agregacji: {len(df_grouped)} ofert (NFJ).")
     
+    # NOWOŚĆ: Bezpieczne podłączenie do Neona z wymuszeniem postgresql:// i czasem na wybudzenie bazy
+    if not DB_URL:
+        print("KRYTYCZNY BŁĄD: Brak zmiennej środowiskowej DB_URL.")
+        sys.exit(1)
+        
+    db_url_clean = DB_URL.replace("postgres://", "postgresql://", 1)
+    
     try:
-        engine = create_engine(DB_URL)
+        engine = create_engine(
+            db_url_clean,
+            pool_pre_ping=True,
+            connect_args={'connect_timeout': 30}
+        )
+        print("Ładowanie danych do bazy PostgreSQL...")
         df_grouped.to_sql('poland_job_offers', engine, if_exists='replace', index=False)
-        print("Zapisano do bazy (REPLACE).")
-    except Exception as e: print(f"Blad zapisu: {e}")
+        print("SUKCES: Zapisano do bazy (REPLACE).")
+    except Exception as e: 
+        print(f"KRYTYCZNY BŁĄD ZAPISU DO BAZY: {e}")
+        sys.exit(1) # NOWOŚĆ: Twarde zatrzymanie skryptu
 
 if __name__ == "__main__":
     transform_poland()
