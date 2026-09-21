@@ -1,9 +1,11 @@
 import boto3
 import os
+import sys # NOWOŚĆ: twarde zatrzymanie rurociągu
 import json
 import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError # NOWOŚĆ
 from botocore.client import Config
 from dotenv import load_dotenv
 
@@ -39,7 +41,21 @@ def assign_category(title_str):
     return 'Inne'
 
 def transform_jjit():
-    s3_client = boto3.client('s3', endpoint_url=S3_ENDPOINT, aws_access_key_id=S3_ACCESS_KEY, aws_secret_access_key=S3_SECRET_KEY, region_name='us-east-1', config=Config(signature_version='s3v4'))
+    # NOWOŚĆ: Wymuszenie Path-Style dla lokalnego MinIO
+    my_config = Config(
+        signature_version='s3v4',
+        s3={'addressing_style': 'path'} 
+    )
+
+    s3_client = boto3.client(
+        's3', 
+        endpoint_url=S3_ENDPOINT, 
+        aws_access_key_id=S3_ACCESS_KEY, 
+        aws_secret_access_key=S3_SECRET_KEY, 
+        region_name='us-east-1', 
+        config=my_config
+    )
+    
     date_str = datetime.now().strftime("%Y-%m-%d")
     file_key = f"{date_str}/jjit_jobs.json"
     
@@ -48,8 +64,8 @@ def transform_jjit():
         jobs = json.loads(response['Body'].read().decode('utf-8'))
         print(f"Wczytano {len(jobs)} surowych ofert (JJIT)")
     except Exception as e:
-        print(f"Blad pobierania pliku {file_key}: {e}")
-        return
+        print(f"KRYTYCZNY BŁĄD POBIERANIA Z MINIO: {file_key}. Powód: {e}")
+        sys.exit(1) # NOWOŚĆ: Twarde zatrzymanie
 
     processed_data = []
     for job in jobs:
@@ -65,7 +81,7 @@ def transform_jjit():
         fully_remote = (workplace_type == 'remote')
         
         places_list = []
-        coords_list = [] # NOWOŚĆ
+        coords_list = []
         
         if fully_remote: places_list.append("Remote")
         if job.get('city'): places_list.append(str(job.get('city')).strip())
@@ -74,7 +90,6 @@ def transform_jjit():
             if isinstance(loc, dict):
                 if loc.get('city'): places_list.append(str(loc.get('city')).strip())
                 
-                # NOWOŚĆ: Ekstrakcja dokładnych koordynat
                 lat = loc.get('latitude')
                 lon = loc.get('longitude')
                 if lat and lon:
@@ -90,7 +105,7 @@ def transform_jjit():
             if p and p.lower() != 'remote' and p not in unique_places: unique_places.append(p)
                 
         location = ", ".join(unique_places) if unique_places else 'Polska'
-        coordinates_str = json.dumps(coords_list) # Pakujemy do JSONa
+        coordinates_str = json.dumps(coords_list)
         url = f"https://justjoin.it/offers/{o_id}" if o_id != 'brak' else ''
 
         salary_min, salary_max, currency = None, None, 'PLN'
@@ -125,7 +140,7 @@ def transform_jjit():
             'location': location, 'remote': fully_remote, 'contract_type': contract_type,
             'salary_min': salary_min, 'salary_max': salary_max, 'currency': currency,
             'url': url, 'date_added': date_added, 'technologie': technologie_str,
-            'coordinates': coordinates_str # NOWOŚĆ
+            'coordinates': coordinates_str
         })
 
     df = pd.DataFrame(processed_data)
@@ -161,17 +176,31 @@ def transform_jjit():
         'remote': 'max', 'contract_type': scal_umowy, 'salary_min': 'first',
         'salary_max': 'first', 'currency': 'first', 'url': 'first',
         'date_added': 'max', 'technologie': 'first',
-        'coordinates': scal_koordynaty # NOWOŚĆ
+        'coordinates': scal_koordynaty
     }
 
     df_grouped = df.groupby(['title', 'company_name'], as_index=False).agg(sposob_agregacji)
     print(f"Po agregacji: {len(df_grouped)} ofert (JJIT).")
     
+    # NOWOŚĆ: Bezpieczne podłączenie do Neona (Cold Start)
+    if not DB_URL:
+        print("KRYTYCZNY BŁĄD: Brak zmiennej środowiskowej DB_URL.")
+        sys.exit(1)
+        
+    db_url_clean = DB_URL.replace("postgres://", "postgresql://", 1)
+    
     try:
-        engine = create_engine(DB_URL)
+        engine = create_engine(
+            db_url_clean,
+            pool_pre_ping=True,
+            connect_args={'connect_timeout': 30}
+        )
+        print("Ładowanie danych (APPEND) do bazy PostgreSQL...")
         df_grouped.to_sql('poland_job_offers', engine, if_exists='append', index=False)
-        print("Zapisano do bazy (APPEND).")
-    except Exception as e: print(f"Blad zapisu bazy: {e}")
+        print("SUKCES: Zapisano do bazy (APPEND).")
+    except Exception as e: 
+        print(f"KRYTYCZNY BŁĄD ZAPISU DO BAZY: {e}")
+        sys.exit(1) # NOWOŚĆ: Twarde zatrzymanie
 
 if __name__ == "__main__":
     transform_jjit()
