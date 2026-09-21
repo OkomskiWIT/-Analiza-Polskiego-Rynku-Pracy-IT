@@ -1,3 +1,4 @@
+import sys
 import requests
 import boto3
 import json
@@ -11,12 +12,18 @@ S3_SECRET_KEY = 'supersecretpassword'
 BUCKET_NAME = 'raw-data'
 
 def extract_jjit():
+    # NOWOŚĆ: s3={'addressing_style': 'path'} wymusza poprawny format URL dla lokalnego MinIO
+    my_config = Config(
+        signature_version='s3v4',
+        s3={'addressing_style': 'path'}
+    )
+
     s3_client = boto3.client(
         's3', endpoint_url=S3_ENDPOINT,
         aws_access_key_id=S3_ACCESS_KEY,
         aws_secret_access_key=S3_SECRET_KEY,
         region_name='us-east-1',
-        config=Config(signature_version='s3v4')
+        config=my_config
     )
 
     all_offers = []
@@ -83,6 +90,7 @@ def extract_jjit():
             print(f"Poprawnie zapisano plik w jeziorze danych: {file_key}")
         except Exception as e:
             print(f"Błąd zapisu do MinIO: {e}")
+            sys.exit(1) # NOWOŚĆ: Zatrzymaj rurociąg przy błędzie
 
 if __name__ == "__main__":
     extract_jjit()
