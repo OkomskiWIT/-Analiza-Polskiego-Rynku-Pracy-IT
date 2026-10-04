@@ -2,28 +2,31 @@ name: Codzienny ETL (Aktualizacja Rynku IT)
 
 on:
   schedule:
-    # Uruchamia się codziennie o 3:00 w nocy i o 15:00 (czasu serwera UTC)
     - cron: '0 3,15 * * *'
   workflow_dispatch: 
-    # Pozwala na ręczne uruchomienie przyciskiem
 
 jobs:
   uruchom-rurociag:
     runs-on: ubuntu-latest
 
+    services:
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: admin
+          MINIO_ROOT_PASSWORD: supersecretpassword
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        command: server /data
+
     steps:
       - name: 📥 Pobranie kodu z repozytorium
         uses: actions/checkout@v3
-
-      - name: 🐳 Uruchomienie tymczasowego serwera MinIO (Data Lake)
-        run: |
-          docker run -d -p 9000:9000 --name minio_server -e MINIO_ROOT_USER=admin -e MINIO_ROOT_PASSWORD=supersecretpassword quay.io/minio/minio server /data
-          sleep 5
-
-      - name: 🪣 Konfiguracja klienta i tworzenie bucketa (raw-data)
-        run: |
-          docker run --rm --network host quay.io/minio/mc alias set myminio http://127.0.0.1:9000 admin supersecretpassword
-          docker run --rm --network host quay.io/minio/mc mb myminio/raw-data
 
       - name: 🐍 Konfiguracja środowiska Python
         uses: actions/setup-python@v4
