@@ -99,7 +99,7 @@ def load_ml_model():
         return None, None
 
 def build_interactive_map(df, max_pins=2000):
-    m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="CartoDB positron")
+    m = folium.Map(location=[52.0693, 19.4803], zoom_start=6, tiles="OpenStreetMap")
     marker_cluster = MarkerCluster().add_to(m)
     grouped_offers = {}
     laczna_liczba_wczytanych_ofert = 0
